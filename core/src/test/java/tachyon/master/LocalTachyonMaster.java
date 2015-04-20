@@ -16,19 +16,15 @@ package tachyon.master;
 
 import java.io.File;
 import java.io.IOException;
-import java.net.InetSocketAddress;
 
 import com.google.common.base.Preconditions;
 import com.google.common.base.Supplier;
 
 import tachyon.Constants;
-import tachyon.UnderFileSystemCluster;
-import tachyon.UnderFileSystemsUtils;
 import tachyon.client.TachyonFS;
-import tachyon.conf.CommonConf;
-import tachyon.conf.MasterConf;
-import tachyon.conf.UserConf;
-import tachyon.conf.WorkerConf;
+import tachyon.conf.TachyonConf;
+import tachyon.underfs.UnderFileSystemCluster;
+import tachyon.underfs.UnderFileSystemsUtils;
 import tachyon.util.CommonUtils;
 import tachyon.util.NetworkUtils;
 
@@ -62,45 +58,56 @@ public final class LocalTachyonMaster {
   };
   private final ClientPool mClientPool = new ClientPool(mClientSupplier);
 
-  private LocalTachyonMaster(final String tachyonHome) throws IOException {
+  private LocalTachyonMaster(final String tachyonHome, TachyonConf tachyonConf) throws IOException {
     mTachyonHome = tachyonHome;
 
     mDataDir = path(mTachyonHome, "data");
     mLogDir = path(mTachyonHome, "logs");
 
-    UnderFileSystemsUtils.mkdirIfNotExists(mDataDir);
-    UnderFileSystemsUtils.mkdirIfNotExists(mLogDir);
+    UnderFileSystemsUtils.mkdirIfNotExists(mDataDir, tachyonConf);
+    UnderFileSystemsUtils.mkdirIfNotExists(mLogDir, tachyonConf);
 
-    mHostname = NetworkUtils.getLocalHostName();
+    mHostname = NetworkUtils.getLocalHostName(250);
 
     // To start the UFS either for integration or unit test. If it targets the unit test, UFS is
     // setup over the local file system (see also {@link LocalFilesystemCluster} - under folder of
     // "mTachyonHome/tachyon*". Otherwise, it starts some distributed file system cluster e.g.,
     // miniDFSCluster (see also {@link tachyon.LocalMiniDFScluster} and setup the folder like
     // "hdfs://xxx:xxx/tachyon*".
-    mUnderFSCluster = UnderFileSystemCluster.get(mTachyonHome + "/dfs");
+    mUnderFSCluster = UnderFileSystemCluster.get(mTachyonHome + "/dfs", tachyonConf);
     mUnderFSFolder = mUnderFSCluster.getUnderFilesystemAddress() + "/tachyon_underfs_folder";
     // To setup the journalFolder under either local file system or distributed ufs like
     // miniDFSCluster
     mJournalFolder = mUnderFSCluster.getUnderFilesystemAddress() + "/journal";
 
-    UnderFileSystemsUtils.mkdirIfNotExists(mJournalFolder);
-    CommonUtils.touch(mJournalFolder + "/_format_" + System.currentTimeMillis());
+    UnderFileSystemsUtils.mkdirIfNotExists(mJournalFolder, tachyonConf);
+    CommonUtils.touch(mJournalFolder + "/_format_" + System.currentTimeMillis(), tachyonConf);
 
-    System.setProperty("tachyon.master.hostname", mHostname);
-    System.setProperty("tachyon.master.journal.folder", mJournalFolder);
-    System.setProperty("tachyon.underfs.address", mUnderFSFolder);
+    tachyonConf.set(Constants.MASTER_HOSTNAME, mHostname);
+    tachyonConf.set(Constants.MASTER_JOURNAL_FOLDER, mJournalFolder);
+    tachyonConf.set(Constants.UNDERFS_ADDRESS, mUnderFSFolder);
 
-    CommonConf.clear();
-    MasterConf.clear();
-    WorkerConf.clear();
-    UserConf.clear();
+    tachyonConf.set(Constants.MASTER_PORT, "0");
+    tachyonConf.set(Constants.MASTER_WEB_PORT, "0");
 
-    System.setProperty("tachyon.web.resources", System.getProperty("user.dir") + "/src/main/webapp");
-    mTachyonMaster = new TachyonMaster(new InetSocketAddress(mHostname, 0), 0, 1, 1, 1);
+    tachyonConf.set(Constants.MASTER_MIN_WORKER_THREADS, "1");
+    tachyonConf.set(Constants.MASTER_MAX_WORKER_THREADS, "100");
+    
+    // If tests fail to connect they should fail early rather than using the default ridiculously high retries
+    tachyonConf.set(Constants.MASTER_RETRY_COUNT, "3");
+    
+    // Since tests are always running on a single host keep the resolution timeout low as otherwise people
+    // running with strange network configurations will see very slow tests
+    tachyonConf.set(Constants.HOST_RESOLUTION_TIMEOUT_MS, "250");
 
-    System.setProperty("tachyon.master.port", Integer.toString(getMetaPort()));
-    System.setProperty("tachyon.master.web.port", Integer.toString(getMetaPort() + 1));
+    tachyonConf.set(Constants.WEB_THREAD_COUNT, "1");
+    tachyonConf.set(Constants.WEB_RESOURCES, System.getProperty("user.dir") + "/src/main/webapp");
+
+    mTachyonMaster = new TachyonMaster(tachyonConf);
+
+    // Reset the ports
+    tachyonConf.set(Constants.MASTER_PORT, Integer.toString(getMetaPort()));
+    tachyonConf.set(Constants.MASTER_WEB_PORT, Integer.toString(getMetaPort() + 1));
 
     Runnable runMaster = new Runnable() {
       @Override
@@ -121,14 +128,15 @@ public final class LocalTachyonMaster {
    * 
    * @throws IOException unable to do file operation or listen on port
    */
-  public static LocalTachyonMaster create() throws IOException {
+  public static LocalTachyonMaster create(TachyonConf tachyonConf) throws IOException {
     final String tachyonHome = uniquePath();
-    UnderFileSystemsUtils.deleteDir(tachyonHome);
-    UnderFileSystemsUtils.mkdirIfNotExists(tachyonHome);
+    UnderFileSystemsUtils.deleteDir(tachyonHome, tachyonConf);
+    UnderFileSystemsUtils.mkdirIfNotExists(tachyonHome, tachyonConf);
 
-    System.setProperty("tachyon.home", tachyonHome);
+    // Update Tachyon home in the passed TachyonConf instance.
+    tachyonConf.set(Constants.TACHYON_HOME, tachyonHome);
 
-    return new LocalTachyonMaster(tachyonHome);
+    return new LocalTachyonMaster(tachyonHome, tachyonConf);
   }
 
   /**
@@ -146,8 +154,9 @@ public final class LocalTachyonMaster {
    * 
    * @throws IOException unable to do file operation or listen on port
    */
-  public static LocalTachyonMaster create(final String tachyonHome) throws IOException {
-    return new LocalTachyonMaster(Preconditions.checkNotNull(tachyonHome));
+  public static LocalTachyonMaster create(final String tachyonHome, TachyonConf tachyonConf)
+      throws IOException {
+    return new LocalTachyonMaster(Preconditions.checkNotNull(tachyonHome), tachyonConf);
   }
 
   public void start() {
@@ -157,7 +166,7 @@ public final class LocalTachyonMaster {
   /**
    * Stops the master and cleans up client connections.
    * 
-   * This method will not clean up {@link tachyon.UnderFileSystemsUtils} data. To do that you must
+   * This method will not clean up {@link tachyon.underfs.UnderFileSystemsUtils} data. To do that you must
    * call {@link #cleanupUnderfs()}.
    */
   public void stop() throws Exception {
@@ -165,10 +174,9 @@ public final class LocalTachyonMaster {
 
     mTachyonMaster.stop();
 
-    System.clearProperty("tachyon.home");
-    System.clearProperty("tachyon.master.hostname");
-    System.clearProperty("tachyon.master.port");
     System.clearProperty("tachyon.web.resources");
+    System.clearProperty("tachyon.master.min.worker.threads");
+
   }
 
   public void clearClients() throws IOException {
@@ -179,7 +187,6 @@ public final class LocalTachyonMaster {
     if (null != mUnderFSCluster) {
       mUnderFSCluster.cleanup();
     }
-    System.clearProperty("tachyon.master.journal.folder");
     System.clearProperty("tachyon.underfs.address");
   }
 
@@ -192,7 +199,7 @@ public final class LocalTachyonMaster {
   }
 
   public TachyonFS getClient() throws IOException {
-    return mClientPool.getClient();
+    return mClientPool.getClient(mTachyonMaster.getTachyonConf());
   }
 
   public String getEditLogPath() {
@@ -217,5 +224,9 @@ public final class LocalTachyonMaster {
 
   public boolean isStarted() {
     return mTachyonMaster.isStarted();
+  }
+
+  public TachyonConf getTachyonConf() {
+    return mTachyonMaster.getTachyonConf();
   }
 }

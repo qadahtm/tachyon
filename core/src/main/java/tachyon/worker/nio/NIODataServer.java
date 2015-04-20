@@ -4,9 +4,9 @@
  * copyright ownership. The ASF licenses this file to You under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance with the License. You may obtain a
  * copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software distributed under the License
  * is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express
  * or implied. See the License for the specific language governing permissions and limitations under
@@ -34,13 +34,13 @@ import org.slf4j.LoggerFactory;
 import com.google.common.base.Throwables;
 
 import tachyon.Constants;
-import tachyon.conf.CommonConf;
+import tachyon.conf.TachyonConf;
 import tachyon.worker.BlocksLocker;
 import tachyon.worker.DataServer;
-import tachyon.worker.hierarchy.StorageDir;
+import tachyon.worker.tiered.StorageDir;
 
 /**
- * The Server to serve data file read request from remote machines. The current implementation is
+ * The Server to serve data file read requests from remote machines. The current implementation is
  * based on non-blocking NIO.
  */
 public class NIODataServer implements Runnable, DataServer {
@@ -55,6 +55,9 @@ public class NIODataServer implements Runnable, DataServer {
   // The selector we will be monitoring.
   private Selector mSelector;
 
+  // Instance of TachyonConf
+  private final TachyonConf mTachyonConf;
+
   private final Map<SocketChannel, DataServerMessage> mSendingData = Collections
       .synchronizedMap(new HashMap<SocketChannel, DataServerMessage>());
   private final Map<SocketChannel, DataServerMessage> mReceivingData = Collections
@@ -65,17 +68,19 @@ public class NIODataServer implements Runnable, DataServer {
   private final Thread mListenerThread;
 
   private volatile boolean mShutdown = false;
-  private volatile boolean mShutdowned = false;
+  private volatile boolean mShutdownComplete = false;
 
   /**
    * Create a data server with direct access to worker storage.
-   * 
+   *
    * @param address The address of the data server.
    * @param locker The lock system for lock blocks.
    */
-  public NIODataServer(InetSocketAddress address, BlocksLocker locker) {
+  public NIODataServer(final InetSocketAddress address, final BlocksLocker locker,
+      TachyonConf tachyonConf) {
     LOG.info("Starting DataServer @ " + address);
-    CommonConf.assertValidPort(address);
+    mTachyonConf = tachyonConf;
+    TachyonConf.assertValidPort(address, mTachyonConf);
     mAddress = address;
     mBlockLocker = locker;
     try {
@@ -96,14 +101,14 @@ public class NIODataServer implements Runnable, DataServer {
     SocketChannel socketChannel = serverSocketChannel.accept();
     socketChannel.configureBlocking(false);
 
-    // Register the new SocketChannel with our Selector, indicating we'd like to be notified
+    // Register the new SocketChannel with our Selector, indicating that we'd like to be notified
     // when there is data waiting to be read.
     socketChannel.register(mSelector, SelectionKey.OP_READ);
   }
 
   /**
    * Close the data server.
-   * 
+   *
    * @throws IOException
    */
   @Override
@@ -138,7 +143,7 @@ public class NIODataServer implements Runnable, DataServer {
 
       return socketSelector;
     } catch (IOException e) {
-      // we wan't to throw the original IO issue, not the close issue, so don't throw
+      // we want to throw the original IO issue, not the close issue, so don't throw
       // #close IOException.
       try {
         socketSelector.close();
@@ -148,7 +153,7 @@ public class NIODataServer implements Runnable, DataServer {
       }
       throw e;
     } catch (RuntimeException e) {
-      // we wan't to throw the original IO issue, not the close issue, so don't throw
+      // we want to throw the original IO issue, not the close issue, so don't throw
       // #close IOException.
       try {
         socketSelector.close();
@@ -165,7 +170,7 @@ public class NIODataServer implements Runnable, DataServer {
    */
   @Override
   public boolean isClosed() {
-    return mShutdowned;
+    return mShutdownComplete;
   }
 
   private void read(SelectionKey key) throws IOException {
@@ -217,7 +222,7 @@ public class NIODataServer implements Runnable, DataServer {
       ByteBuffer data;
       int dataLen = 0;
       try {
-        data = storageDir.getBlockData(blockId, tMessage.getOffset(), (int)tMessage.getLength());
+        data = storageDir.getBlockData(blockId, tMessage.getOffset(), (int) tMessage.getLength());
         storageDir.accessBlock(blockId);
         dataLen = data.limit();
       } catch (Exception e) {
@@ -270,7 +275,7 @@ public class NIODataServer implements Runnable, DataServer {
         throw new RuntimeException(e);
       }
     }
-    mShutdowned = true;
+    mShutdownComplete = true;
   }
 
   private void write(SelectionKey key) {

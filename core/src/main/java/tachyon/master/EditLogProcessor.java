@@ -4,9 +4,9 @@
  * copyright ownership. The ASF licenses this file to You under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance with the License. You may obtain a
  * copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software distributed under the License
  * is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express
  * or implied. See the License for the specific language governing permissions and limitations under
@@ -23,7 +23,8 @@ import org.slf4j.LoggerFactory;
 import com.google.common.base.Throwables;
 
 import tachyon.Constants;
-import tachyon.UnderFileSystem;
+import tachyon.conf.TachyonConf;
+import tachyon.underfs.UnderFileSystem;
 import tachyon.util.CommonUtils;
 
 /**
@@ -32,26 +33,31 @@ import tachyon.util.CommonUtils;
 public class EditLogProcessor implements Runnable {
   private static final Logger LOG = LoggerFactory.getLogger(Constants.LOGGER_TYPE);
 
+  /** Journal of the master. */
   private final Journal mJournal;
+  /** path of the edit logs. */
   private final String mPath;
   private final MasterInfo mMasterInfo;
 
   private int mCurrentLogFileNum = 0;
   private int mLastImageFileNum = 0;
   private long mLoadedImageModTime = 0L;
+  private final TachyonConf mTachyonConf;
   private volatile boolean mIsStandby = true;
 
   /**
    * Create a new EditLogProcessor.
-   * 
+   *
    * @param journal The journal of the Master
    * @param path The path of the edit logs
    * @param info The Master Info
+   * @param tachyonConf The TachyonConf instance.
    */
-  public EditLogProcessor(Journal journal, String path, MasterInfo info) {
+  public EditLogProcessor(Journal journal, String path, MasterInfo info, TachyonConf tachyonConf) {
     mJournal = journal;
     mPath = path;
     mMasterInfo = info;
+    mTachyonConf = tachyonConf;
     try {
       mLoadedImageModTime = mJournal.getImageModTimeMs();
     } catch (IOException e) {
@@ -63,7 +69,7 @@ public class EditLogProcessor implements Runnable {
   @Override
   public void run() {
     LOG.info("Edit log processor with path " + mPath + " started.");
-    UnderFileSystem ufs = UnderFileSystem.get(mPath);
+    UnderFileSystem ufs = UnderFileSystem.get(mPath, mTachyonConf);
     while (mIsStandby) {
       try {
         synchronized (mJournal) {

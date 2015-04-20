@@ -4,9 +4,9 @@
  * copyright ownership. The ASF licenses this file to You under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance with the License. You may obtain a
  * copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software distributed under the License
  * is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express
  * or implied. See the License for the specific language governing permissions and limitations under
@@ -23,8 +23,10 @@ import java.util.List;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectWriter;
 import org.junit.Assert;
+import org.junit.Before;
 import org.junit.Test;
 
+import tachyon.conf.TachyonConf;
 import tachyon.StorageDirId;
 import tachyon.StorageLevelAlias;
 import tachyon.thrift.BlockInfoException;
@@ -35,6 +37,13 @@ import tachyon.thrift.SuspectedFileSizeException;
  * Unit tests for tachyon.InodeFile
  */
 public class InodeFileTest {
+  private TachyonConf mTachyonConf;
+
+  @Before
+  public void before() {
+    mTachyonConf = new TachyonConf();
+  }
+
   // Tests for Inode methods
   @Test
   public void comparableTest() {
@@ -69,12 +78,11 @@ public class InodeFileTest {
     testAddresses.add(new NetAddress("testhost3", 3000, 3001));
     inodeFile.addBlock(new BlockInfo(inodeFile, 0, 5));
     inodeFile.addLocation(0, 1, testAddresses.get(0), storageDirId);
-    Assert.assertEquals(1, inodeFile.getBlockLocations(0).size());
+    Assert.assertEquals(1, inodeFile.getBlockLocations(0, mTachyonConf).size());
     inodeFile.addLocation(0, 2, testAddresses.get(1), storageDirId);
-    Assert.assertEquals(2, inodeFile.getBlockLocations(0).size());
+    Assert.assertEquals(2, inodeFile.getBlockLocations(0, mTachyonConf).size());
     inodeFile.addLocation(0, 3, testAddresses.get(2), storageDirId);
-    Assert.assertEquals(3, inodeFile.getBlockLocations(0).size());
-    Assert.assertEquals(testAddresses, inodeFile.getBlockLocations(0));
+    Assert.assertEquals(3, inodeFile.getBlockLocations(0, mTachyonConf).size());
   }
 
   @Test(expected = BlockInfoException.class)
@@ -213,23 +221,23 @@ public class InodeFileTest {
   public void emeptyInodeGetBlock() throws BlockInfoException {
     InodeFile inode1 = new InodeFile("test1", 1, 0, 1000, System.currentTimeMillis());
     Assert.assertEquals(0, inode1.getBlockIds().size());
-    // cant get a block that is missing
-    inode1.getClientBlockInfo(0);
+    // can not get a block that is missing
+    inode1.getClientBlockInfo(0, mTachyonConf);
   }
 
   @Test(expected = BlockInfoException.class)
   public void emeptyInodeGetBlockLarger() throws BlockInfoException {
     InodeFile inode1 = new InodeFile("test1", 1, 0, 1000, System.currentTimeMillis());
     Assert.assertEquals(0, inode1.getBlockIds().size());
-    // cant get a block that is missing
-    inode1.getClientBlockInfo(1);
+    // can not get a block that is missing
+    inode1.getClientBlockInfo(1, mTachyonConf);
   }
 
   @Test(expected = BlockInfoException.class)
   public void negativeBlockGetBlock() throws BlockInfoException {
     InodeFile inode1 = new InodeFile("test1", 1, 0, 1000, System.currentTimeMillis());
-    // cant get a block that is missing
-    inode1.getClientBlockInfo(-1);
+    // can not get a block that is missing
+    inode1.getClientBlockInfo(-1, mTachyonConf);
   }
 
   @Test

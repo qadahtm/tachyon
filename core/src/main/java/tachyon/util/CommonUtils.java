@@ -18,6 +18,8 @@ package tachyon.util;
 import java.io.File;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.InvocationTargetException;
 import java.math.BigDecimal;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
@@ -31,14 +33,17 @@ import org.apache.commons.io.FilenameUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.google.common.base.CharMatcher;
+import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
 import com.google.common.io.ByteStreams;
 import com.google.common.io.Closer;
 
 import tachyon.Constants;
 import tachyon.TachyonURI;
-import tachyon.UnderFileSystem;
+import tachyon.conf.TachyonConf;
 import tachyon.thrift.InvalidPathException;
+import tachyon.underfs.UnderFileSystem;
 
 import sun.misc.Cleaner;
 import sun.nio.ch.DirectBuffer;
@@ -115,7 +120,7 @@ public final class CommonUtils {
   /**
    * Force to unmap direct buffer if the buffer is no longer used. It is unsafe operation and
    * currently a walk-around to avoid huge memory occupation caused by memory map.
-   * 
+   *
    * @param buffer the byte buffer to be unmapped
    */
   public static void cleanDirectBuffer(ByteBuffer buffer) {
@@ -123,7 +128,7 @@ public final class CommonUtils {
       return;
     }
     if (buffer.isDirect()) {
-      Cleaner cleaner = ((DirectBuffer)buffer).cleaner();
+      Cleaner cleaner = ((DirectBuffer) buffer).cleaner();
       cleaner.clean();
     }
   }
@@ -177,6 +182,26 @@ public final class CommonUtils {
       }
     }
     return retPath;
+  }
+
+  /**
+   * Join each element in paths in order, separated by {@code TachyonURI.SEPARATOR}.
+   *
+   * For example, {@code concatPath("/myroot/", "dir", "filename"); } returns
+   * {@code "/myroot/dir/filename"}
+   *
+   * @param paths to concatenate
+   * @return joined path
+   */
+  public static String concatPath(String... paths) {
+    List<String> trimmedPathList = new ArrayList<String>();
+    for (String path : paths) {
+      String trimmedPath = CharMatcher.is(TachyonURI.SEPARATOR.charAt(0)).trimTrailingFrom(path);
+      if (trimmedPath != "") {
+        trimmedPathList.add(trimmedPath);
+      }
+    }
+    return Joiner.on(TachyonURI.SEPARATOR).join(trimmedPathList);
   }
 
   public static String convertByteArrayToStringWithoutEscape(byte[] data, int offset, int length) {
@@ -471,10 +496,17 @@ public final class CommonUtils {
   }
 
   public static void sleepMs(Logger logger, long timeMs) {
+    sleepMs(logger, timeMs, false);
+  }
+
+  public static void sleepMs(Logger logger, long timeMs, boolean shouldInterrupt) {
     try {
       Thread.sleep(timeMs);
     } catch (InterruptedException e) {
       logger.warn(e.getMessage(), e);
+      if (shouldInterrupt) {
+        Thread.currentThread().interrupt();
+      }
     }
   }
 
@@ -492,8 +524,8 @@ public final class CommonUtils {
    *
    * @throws IOException
    */
-  public static void touch(String path) throws IOException {
-    UnderFileSystem ufs = UnderFileSystem.get(path);
+  public static void touch(String path, TachyonConf tachyonConf) throws IOException {
+    UnderFileSystem ufs = UnderFileSystem.get(path, tachyonConf);
     OutputStream os = ufs.create(path);
     os.close();
   }
@@ -509,5 +541,24 @@ public final class CommonUtils {
         || path.contains(" ")) {
       throw new InvalidPathException("Path " + path + " is invalid.");
     }
+  }
+
+  /**
+   * Creates new instance of a class by calling a constructor that receives ctorClassArgs arguments
+   *
+   * @param cls the class to create
+   * @param ctorClassArgs parameters type list of the constructor to initiate, if null default
+   *        constructor will be called
+   * @param ctorArgs the arguments to pass the constructor
+   * @return new class object or null if not successful
+   */
+  public static <T> T createNewClassInstance(Class<T> cls, Class<?>[] ctorClassArgs,
+      Object[] ctorArgs) throws InstantiationException, IllegalAccessException,
+      NoSuchMethodException, SecurityException, InvocationTargetException {
+    if (ctorClassArgs == null) {
+      return cls.newInstance();
+    }
+    Constructor<T> ctor = cls.getConstructor(ctorClassArgs);
+    return ctor.newInstance(ctorArgs);
   }
 }

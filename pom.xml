@@ -2,7 +2,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>org.tachyonproject</groupId>
   <artifactId>tachyon-parent</artifactId>
-  <version>0.6.3</version>
+  <version>0.7.0-SNAPSHOT</version>
   <packaging>pom</packaging>
   <description>Tachyon Project Parent</description>
   <name>Tachyon Project Parent</name>
@@ -18,7 +18,7 @@
     <connection>scm:git:git@github.com:amplab/tachyon.git</connection>
     <developerConnection>scm:git:git@github.com:amplab/tachyon.git</developerConnection>
     <url>scm:git:git@github.com:amplab/tachyon.git</url>
-    <tag>v0.6.3</tag>
+    <tag>HEAD</tag>
   </scm>
   <developers>
     <developer>
@@ -121,7 +121,6 @@
   </pluginRepositories>
 
   <properties>
-    <test.profile>local</test.profile>
     <test.output.redirect>true</test.output.redirect>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <java.version>1.6</java.version>
@@ -131,9 +130,10 @@
     <cxf.version>2.7.0</cxf.version>
     <jetty.version>7.6.15.v20140411</jetty.version>
     <slf4j.version>1.7.2</slf4j.version>
-    <powermock.version>1.5.4</powermock.version>
+    <powermock.version>1.6.1</powermock.version>
     <log4j.version>1.2.17</log4j.version>
     <apache.curator.version>2.1.0-incubating</apache.curator.version>
+    <junit.version>4.12</junit.version>
     <license.header.path>build/license/</license.header.path>
     <checkstyle.path>build/checkstyle/</checkstyle.path>
     <findbugs.path>build/findbugs/</findbugs.path>
@@ -143,6 +143,7 @@
     <module>core</module>
     <module>client</module>
     <module>assembly</module>
+    <module>underfs</module>
   </modules>
 
   <build>
@@ -180,7 +181,7 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-release-plugin</artifactId>
-        <version>2.4.1</version>
+        <version>2.5.1</version>
       </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
@@ -216,7 +217,7 @@
           </execution>
         </executions>
       </plugin>
-      
+
       <!-- Find Bugs -->
       <plugin>
         <groupId>org.codehaus.mojo</groupId>
@@ -229,7 +230,7 @@
           <effort>Max</effort>
         </configuration>
       </plugin>
-      
+
       <!-- Checkstyle -->
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
@@ -266,7 +267,7 @@
           </dependency>
         </dependencies>
       </plugin>
-      
+
       <!-- License Plugin -->
       <plugin>
         <groupId>com.mycila</groupId>
@@ -278,14 +279,14 @@
           <aggregate>false</aggregate>
           <excludes>
             <!-- Code Exclusions -->
-            <exclude>**/src/main/resources/version.properties</exclude>
             <exclude>**/src/main/java/tachyon/thrift/*</exclude>
             <exclude>**/src/main/webapp/**/*</exclude>
             <exclude>**/src/thrift/*</exclude>
             <exclude>**/src/deb/**/*</exclude>
-            <exclude>**/src/test/resources/*</exclude>
+            <exclude>**/src/test/resources/**</exclude>
             <exclude>**/package-info.java</exclude>
-            
+            <exclude>**/src/main/resources/tachyon-default.properties</exclude>
+
             <!-- Build and Packaging Exclusions -->
             <exclude>build/**/*</exclude>
             <exclude>**/pom.xml</exclude>
@@ -297,11 +298,16 @@
             <exclude>**/src/main/findbugs/*</exclude>
             <exclude>**/src/main/resources/tachyon_checks*</exclude>
             <exclude>**/src/main/assembly/*</exclude>
-            
+
             <!-- Documentation Exclusions -->
             <exclude>**/docs/**/*</exclude>
             <exclude>LICENSE</exclude>
             <exclude>NOTICE</exclude>
+
+            <!-- Default local file Exclusions -->
+            <exclude>**/underFSStorage/**</exclude>
+            <exclude>**/journal/**</exclude>
+
           </excludes>
           <mapping>
             <java>SLASHSTAR_STYLE</java>
@@ -333,7 +339,7 @@
       </plugin>
     </plugins>
   </reporting>
-  
+
   <profiles>
     <profile>
       <!-- Turn of doclint for java8 and later -->

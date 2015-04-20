@@ -39,13 +39,13 @@ import tachyon.TachyonURI;
 import tachyon.client.TachyonFile;
 import tachyon.client.TachyonFS;
 import tachyon.client.WriteType;
-import tachyon.conf.CommonConf;
-import tachyon.conf.UserConf;
+import tachyon.conf.TachyonConf;
 import tachyon.thrift.ClientBlockInfo;
 import tachyon.thrift.ClientDependencyInfo;
 import tachyon.thrift.ClientFileInfo;
 import tachyon.thrift.NetAddress;
 import tachyon.util.CommonUtils;
+import tachyon.util.ConfUtils;
 import tachyon.util.UfsUtils;
 
 /**
@@ -67,6 +67,7 @@ abstract class AbstractTFS extends FileSystem {
   private Path mWorkingDir = new Path(TachyonURI.SEPARATOR);
   private TachyonFS mTFS = null;
   private String mTachyonHeader = null;
+  private final TachyonConf mTachyonConf = new TachyonConf();
 
   @Override
   public FSDataOutputStream append(Path cPath, int bufferSize, Progressable progress)
@@ -81,7 +82,8 @@ abstract class AbstractTFS extends FileSystem {
       LOG.warn("This maybe an error.");
     }
 
-    return new FSDataOutputStream(file.getOutStream(UserConf.get().DEFAULT_WRITE_TYPE), null);
+    WriteType type = getWriteType();
+    return new FSDataOutputStream(file.getOutStream(type), null);
   }
 
   @Override
@@ -95,23 +97,45 @@ abstract class AbstractTFS extends FileSystem {
     }
   }
 
+  /**
+   * Attempts to create a file. Overwrite will not succeed if the path exists and is a folder.
+   *
+   * @param cPath path to create
+   * @param permission permissions of the created file/folder
+   * @param overwrite overwrite if file exists
+   * @param bufferSize the size in bytes of the buffer to be used
+   * @param replication under filesystem replication factor
+   * @param blockSize block size in bytes
+   * @param progress queryable progress
+   * @return
+   * @throws IOException if overwrite is not specified and the path already exists or if the path
+   * is a folder
+   */
   @Override
   public FSDataOutputStream create(Path cPath, FsPermission permission, boolean overwrite,
       int bufferSize, short replication, long blockSize, Progressable progress) throws IOException {
     LOG.info("create(" + cPath + ", " + permission + ", " + overwrite + ", " + bufferSize + ", "
         + replication + ", " + blockSize + ", " + progress + ")");
 
-    if (!CommonConf.get().ASYNC_ENABLED) {
+    boolean asyncEnabled = mTachyonConf.getBoolean(Constants.ASYNC_ENABLED, true);
+    if (!asyncEnabled) {
       TachyonURI path = new TachyonURI(Utils.getPathWithoutScheme(cPath));
       if (mTFS.exist(path)) {
-        if (!mTFS.delete(path, false)) {
-          throw new IOException("Failed to delete existing data " + cPath);
+        if (overwrite && !mTFS.getFileStatus(-1, path).isFolder) {
+          if (!mTFS.delete(path, false)) {
+            throw new IOException("Failed to delete existing data " + cPath);
+          }
+        } else {
+          throw new IOException(cPath.toString() + " already exists. Directories cannot be "
+              + "overwritten with create.");
         }
       }
       int fileId = mTFS.createFile(path, blockSize);
       TachyonFile file = mTFS.getFile(fileId);
       file.setUFSConf(getConf());
-      return new FSDataOutputStream(file.getOutStream(UserConf.get().DEFAULT_WRITE_TYPE), null);
+
+      WriteType type = getWriteType();
+      return new FSDataOutputStream(file.getOutStream(type), null);
     }
 
     if (cPath.toString().contains(FIRST_COM_PATH) && !cPath.toString().contains("SUCCESS")) {
@@ -163,7 +187,7 @@ abstract class AbstractTFS extends FileSystem {
     } else {
       TachyonURI path = new TachyonURI(Utils.getPathWithoutScheme(cPath));
       int fileId;
-      WriteType type = UserConf.get().DEFAULT_WRITE_TYPE;
+      WriteType type = getWriteType();
       if (mTFS.exist(path)) {
         fileId = mTFS.getFileId(path);
         type = WriteType.MUST_CACHE;
@@ -192,7 +216,7 @@ abstract class AbstractTFS extends FileSystem {
    *        overwritten, and if false an error will be thrown.
    * @param bufferSize the size of the buffer to be used.
    * @param replication required block replication for the file.
-   * @param blockSize
+   * @param blockSize the size in bytes of the buffer to be used.
    * @param progress
    * @throws IOException
    * @see #setPermission(Path, FsPermission)
@@ -217,12 +241,29 @@ abstract class AbstractTFS extends FileSystem {
     return delete(path, true);
   }
 
+  /**
+   * Attempts to delete the file or directory with the specified path. Will return true if one or
+   * more files/directories were deleted. Will return false if no files or directories were
+   * deleted.
+   * @param cPath path to delete
+   * @param recursive if true, will attempt to delete all children of the path
+   * @return
+   * @throws IOException if the path failed to be deleted due to some constraint (ie. non empty
+   * directory with recursive flag disabled)
+   */
   @Override
   public boolean delete(Path cPath, boolean recursive) throws IOException {
     LOG.info("delete(" + cPath + ", " + recursive + ")");
     TachyonURI path = new TachyonURI(Utils.getPathWithoutScheme(cPath));
     fromHdfsToTachyon(path);
-    return mTFS.delete(path, recursive);
+    if (!mTFS.exist(path)) {
+      return false;
+    }
+    boolean rtn = mTFS.delete(path, recursive);
+    if (mTFS.exist(path)) {
+      throw new IOException("Failed to delete path " + path.toString());
+    }
+    return rtn;
   }
 
   private void fromHdfsToTachyon(TachyonURI path) throws IOException {
@@ -238,14 +279,15 @@ abstract class AbstractTFS extends FileSystem {
         TachyonURI ufsAddrPath = new TachyonURI(ufsUri.getScheme(), ufsUri.getAuthority(),
             path.getPath());
         // Set the path as the TFS root path.
-        UfsUtils.loadUnderFs(mTFS, path, ufsAddrPath, new PrefixList(null));
+        UfsUtils.loadUnderFs(mTFS, path, ufsAddrPath, new PrefixList(null), mTachyonConf);
       }
     }
   }
 
   @Override
   public long getDefaultBlockSize() {
-    return getConf().getLong("fs.local.block.size", Constants.DEFAULT_BLOCK_SIZE_BYTE);
+    return mTachyonConf.getBytes(Constants.USER_DEFAULT_BLOCK_SIZE_BYTE,
+        Constants.DEFAULT_BLOCK_SIZE_BYTE);
   }
 
   @Override
@@ -273,7 +315,9 @@ abstract class AbstractTFS extends FileSystem {
         ArrayList<String> names = new ArrayList<String>();
         ArrayList<String> hosts = new ArrayList<String>();
         for (NetAddress addr : info.getLocations()) {
-          names.add(addr.mHost);
+          String name = addr.mHost + ":" + addr.mPort;
+          LOG.debug("getFileBlockLocations : adding name : '" + name + "");
+          names.add(name);
           hosts.add(addr.mHost);
         }
         blockLocations.add(new BlockLocation(CommonUtils.toStringArray(names), CommonUtils
@@ -357,7 +401,18 @@ abstract class AbstractTFS extends FileSystem {
     Utils.addS3Credentials(conf);
     setConf(conf);
     mTachyonHeader = getScheme() + "://" + uri.getHost() + ":" + uri.getPort();
-    mTFS = TachyonFS.get(uri.getHost(), uri.getPort(), isZookeeperMode());
+
+    // Load TachyonConf if any and merge to the one in TachyonFS
+    TachyonConf siteConf = ConfUtils.loadFromHadoopConfiguration(conf);
+    if (siteConf != null) {
+      mTachyonConf.merge(siteConf);
+    }
+    mTachyonConf.set(Constants.MASTER_HOSTNAME, uri.getHost());
+    mTachyonConf.set(Constants.MASTER_PORT, Integer.toString(uri.getPort()));
+    mTachyonConf.set(Constants.USE_ZOOKEEPER, Boolean.toString(isZookeeperMode()));
+
+    mTFS = TachyonFS.get(mTachyonConf);
+
     mUri = URI.create(mTachyonHeader);
     mUnderFSAddress = mTFS.getUfsAddress();
     LOG.info(mTachyonHeader + " " + mUri + " " + mUnderFSAddress);
@@ -395,6 +450,15 @@ abstract class AbstractTFS extends FileSystem {
     return ret;
   }
 
+  /**
+   * Attempts to create a folder with the specified path. Parent directories will be created.
+   * Mkdirs will fail if the path already exists or a parent is a file.
+   *
+   * @param cPath path to create
+   * @param permission permissions to grant the created folder
+   * @return
+   * @throws IOException
+   */
   @Override
   public boolean mkdirs(Path cPath, FsPermission permission) throws IOException {
     LOG.info("mkdirs(" + cPath + ", " + permission + ")");
@@ -402,6 +466,14 @@ abstract class AbstractTFS extends FileSystem {
     return mTFS.mkdir(path);
   }
 
+  /**
+   * Attempts to open the specified path for reading.
+   *
+   * @param cPath path to open
+   * @param bufferSize the size in bytes of the buffer to be used
+   * @return
+   * @throws IOException if the file cannot be opened (ie. is a directory)
+   */
   @Override
   public FSDataInputStream open(Path cPath, int bufferSize) throws IOException {
     LOG.info("open(" + cPath + ", " + bufferSize + ")");
@@ -411,7 +483,7 @@ abstract class AbstractTFS extends FileSystem {
     int fileId = mTFS.getFileId(path);
 
     return new FSDataInputStream(new HdfsFileInputStream(mTFS, fileId,
-        Utils.getHDFSPath(path, mUnderFSAddress), getConf(), bufferSize));
+        Utils.getHDFSPath(path, mUnderFSAddress), getConf(), bufferSize, mTachyonConf));
   }
 
   @Override
@@ -419,8 +491,18 @@ abstract class AbstractTFS extends FileSystem {
     LOG.info("rename(" + src + ", " + dst + ")");
     TachyonURI srcPath = new TachyonURI(Utils.getPathWithoutScheme(src));
     TachyonURI dstPath = new TachyonURI(Utils.getPathWithoutScheme(dst));
+    ClientFileInfo info = mTFS.getFileStatus(-1, dstPath);
+    // If the destination is an existing folder, try to move the src into the folder
+    if (info != null && info.isFolder) {
+      dstPath = dstPath.join(srcPath.getName());
+    }
     fromHdfsToTachyon(srcPath);
-    return mTFS.rename(srcPath, dstPath);
+    try {
+      return mTFS.rename(srcPath, dstPath);
+    } catch (IOException ioe) {
+      LOG.error("Failed to rename {} to {}", src, dst, ioe);
+      return false;
+    }
   }
 
   @Override
@@ -445,5 +527,9 @@ abstract class AbstractTFS extends FileSystem {
   @Deprecated
   private boolean useHdfs() {
     return mUnderFSAddress != null && URI.create(mUnderFSAddress).getScheme() != null;
+  }
+
+  private WriteType getWriteType() {
+    return mTachyonConf.getEnum(Constants.USER_DEFAULT_WRITE_TYPE, WriteType.CACHE_THROUGH);
   }
 }

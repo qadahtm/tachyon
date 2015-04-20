@@ -30,14 +30,14 @@
                 <% } %>
                 <th>Last Heartbeat</th>
                 <th>State</th>
-                <th>Memory Capacity</th>
-                <th>Used Memory</th>
-                <th>Memory Usage</th>
+                <th>Workers Capacity</th>
+                <th>Space Used</th>
+                <th>Space Usage</th>
               </thead>  
               <tbody>
                 <% for (WebInterfaceWorkersServlet.NodeInfo nodeInfo : ((WebInterfaceWorkersServlet.NodeInfo[]) request.getAttribute("normalNodeInfos"))) { %>
                   <tr>
-                    <th><%= nodeInfo.getName() %></th>
+                    <th><a href="http://<%= nodeInfo.getHost() %>:<%= request.getAttribute("workerWebPort") %>"><%= nodeInfo.getHost() %></a></th>
                     <% if ((Boolean) request.getAttribute("debug")) { %>
                       <th><%= nodeInfo.getUptimeClockTime() %></th>
                     <% } %>
@@ -85,13 +85,13 @@
                   <th>[D]Uptime</th>
                 <% } %>
                 <th>Last Heartbeat</th>
-                <th>Memory Capacity</th>
+                <th>Workers Capacity</th>
               </thead>  
               <tbody>
                 <% if (request.getAttribute("failedNodeInfos") != null) {
                   for (WebInterfaceWorkersServlet.NodeInfo nodeInfo : ((WebInterfaceWorkersServlet.NodeInfo[]) request.getAttribute("failedNodeInfos"))) { %>
                   <tr>
-                    <th><%= nodeInfo.getName() %></th>
+                    <th><a href="http://<%= nodeInfo.getHost() %>:<%= request.getAttribute("workerWebPort") %>"><%= nodeInfo.getHost() %></a></th>
                     <% if ((Boolean) request.getAttribute("debug")) { %>
                       <th><%= nodeInfo.getUptimeClockTime() %></th>
                     <% } %>

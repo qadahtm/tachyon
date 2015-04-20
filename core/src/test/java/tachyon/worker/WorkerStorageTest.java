@@ -27,17 +27,19 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.ExpectedException;
 
+import tachyon.Constants;
 import tachyon.TachyonURI;
 import tachyon.TestUtils;
-import tachyon.UnderFileSystem;
 import tachyon.client.InStream;
 import tachyon.client.ReadType;
 import tachyon.client.TachyonFS;
 import tachyon.client.WriteType;
+import tachyon.conf.TachyonConf;
 import tachyon.master.LocalTachyonCluster;
 import tachyon.thrift.NetAddress;
 import tachyon.util.CommonUtils;
-import tachyon.worker.hierarchy.StorageDir;
+import tachyon.worker.tiered.StorageDir;
+import tachyon.underfs.UnderFileSystem;
 
 /**
  * Unit tests for tachyon.worker.WorkerStorage
@@ -60,14 +62,13 @@ public class WorkerStorageTest {
   public final void after() throws Exception {
     mLocalTachyonCluster.stop();
     mExecutorService.shutdown();
-    System.clearProperty("tachyon.user.quota.unit.bytes");
   }
 
   @Before
   public final void before() throws IOException {
-    System.setProperty("tachyon.user.quota.unit.bytes", USER_QUOTA_UNIT_BYTES + "");
     mExecutorService = Executors.newFixedThreadPool(2);
-    mLocalTachyonCluster = new LocalTachyonCluster(WORKER_CAPACITY_BYTES);
+    mLocalTachyonCluster = new LocalTachyonCluster(WORKER_CAPACITY_BYTES, USER_QUOTA_UNIT_BYTES,
+        Constants.GB);
     mLocalTachyonCluster.start();
     mTfs = mLocalTachyonCluster.getClient();
 
@@ -80,21 +81,24 @@ public class WorkerStorageTest {
     int fid = TestUtils.createByteFile(mTfs, "/xyz", WriteType.MUST_CACHE, filesize);
     long bid = mTfs.getBlockId(fid, 0);
     mLocalTachyonCluster.stopWorker();
-    // If you call mTfs.delete(fid, true), this will throw a java.util.concurrent.RejectedExecutionException
+    // If you call mTfs.delete(fid, true), this will throw a
+    // java.util.concurrent.RejectedExecutionException
     // this is because stopWorker will close all clients
     // when a client is closed, you are no longer able to do any operations on it
     // so we need to get a fresh client to call delete
     mLocalTachyonCluster.getClient().delete(fid, true);
-
-    WorkerStorage ws = new WorkerStorage(mMasterAddress, mExecutorService);
+    WorkerStorage ws = new WorkerStorage(mMasterAddress, mExecutorService,
+        mLocalTachyonCluster.getWorker().getTachyonConf());
     try {
       ws.initialize(mWorkerAddress);
       String orpahnblock = ws.getUfsOrphansFolder() + TachyonURI.SEPARATOR + bid;
-      UnderFileSystem ufs = UnderFileSystem.get(orpahnblock);
+      UnderFileSystem ufs = UnderFileSystem.get(orpahnblock,
+          mLocalTachyonCluster.getMasterTachyonConf());
       StorageDir storageDir = ws.getStorageDirByBlockId(bid);
       Assert.assertFalse("Orphan block file isn't deleted from workerDataFolder", storageDir != null);
       Assert.assertTrue("UFS hasn't the orphan block file ", ufs.exists(orpahnblock));
-      Assert.assertTrue("Orpahblock file size is changed", ufs.getFileSize(orpahnblock) == filesize);
+      Assert.assertTrue("Orpahblock file size is changed",
+          ufs.getFileSize(orpahnblock) == filesize);
     } finally {
       ws.stop();
     }
@@ -152,7 +156,8 @@ public class WorkerStorageTest {
    */
   @Test
   public void unknownBlockFilesTest() throws Exception {
-    String dirPath = System.getProperty("tachyon.worker.hierarchystore.level0.dirs.path");
+    TachyonConf workerConf = mLocalTachyonCluster.getWorkerTachyonConf();
+    String dirPath = workerConf.get("tachyon.worker.tieredstore.level0.dirs.path", null);
     String dataFolder = CommonUtils.concat(dirPath, mWorkerDataFolder);
     thrown.expect(IllegalArgumentException.class);
     thrown.expectMessage("Wrong file name: xyz");
@@ -160,7 +165,8 @@ public class WorkerStorageTest {
     // try a non-numerical file name
     File unknownFile = new File(dataFolder + TachyonURI.SEPARATOR + "xyz");
     unknownFile.createNewFile();
-    WorkerStorage ws = new WorkerStorage(mMasterAddress, mExecutorService);
+    WorkerStorage ws = new WorkerStorage(mMasterAddress, mExecutorService,
+        mLocalTachyonCluster.getWorker().getTachyonConf());
     try {
       ws.initialize(mWorkerAddress);
     } finally {

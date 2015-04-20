@@ -4,9 +4,9 @@
  * copyright ownership. The ASF licenses this file to You under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance with the License. You may obtain a
  * copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software distributed under the License
  * is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express
  * or implied. See the License for the specific language governing permissions and limitations under
@@ -22,10 +22,13 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import com.google.common.base.Preconditions;
+
 import tachyon.Pair;
 import tachyon.StorageDirId;
 import tachyon.StorageLevelAlias;
-import tachyon.UnderFileSystem;
+import tachyon.conf.TachyonConf;
+import tachyon.underfs.UnderFileSystem;
 import tachyon.thrift.ClientBlockInfo;
 import tachyon.thrift.NetAddress;
 import tachyon.util.NetworkUtils;
@@ -35,33 +38,34 @@ import tachyon.util.NetworkUtils;
  */
 public class BlockInfo {
   /**
-   * Compute the block's id with the inode's id and the block's index in the inode. In Tachyon, the
-   * blockId is equal to ((inodeId << 30) + blockIndex).
-   * 
-   * @param inodeId The inode's id of the block
-   * @param blockIndex The block's index of the block in the inode
-   * @return the block's id
+   * Compute the block id based on its inode id and its index among all blocks of the inode. In
+   * Tachyon, blockId is calculated by ((inodeId << 30) + blockIndex).
+   *
+   * @param inodeId The inode id of the block
+   * @param blockIndex The index of the block in the inode
+   * @return the block id
    */
   public static long computeBlockId(int inodeId, int blockIndex) {
     return ((long) inodeId << 30) + blockIndex;
   }
 
   /**
-   * Compute the block's index in the inode with the block's id. The blockIndex is the last 30 bits
-   * of the blockId.
-   * 
+   * Compute the index of a block within its inode based on the block id. The blockIndex is the 30
+   * least significant bits (LSBs) of the blockId.
+   *
    * @param blockId The id of the block
-   * @return the block's index in the inode
+   * @return the index of the block in the inode
    */
   public static int computeBlockIndex(long blockId) {
     return (int) (blockId & 0x3fffffff);
   }
 
   /**
-   * Compute the inode's id of the block. The inodeId is the first 34 bits of the blockId.
-   * 
+   * Compute the inode id of the block. The inodeId is the 34 most significant bits (MSBs) of the
+   * blockId.
+   *
    * @param blockId The id of the block
-   * @return the inode's id of the block
+   * @return the inode id of the block
    */
   public static int computeInodeId(long blockId) {
     return (int) (blockId >> 30);
@@ -74,15 +78,18 @@ public class BlockInfo {
   public final long mOffset;
   public final long mLength;
 
+  /* Map worker's workerId to its NetAddress */
   private final Map<Long, NetAddress> mLocations = new HashMap<Long, NetAddress>(5);
+  /* Map worker's NetAddress to storageDirId */
   private final Map<NetAddress, Long> mStorageDirIds = new HashMap<NetAddress, Long>(5);
 
   /**
    * @param inodeFile
    * @param blockIndex
-   * @param length Can not be no bigger than 2^31 - 1
+   * @param length must be smaller than 2^31 (i.e., 2GB)
    */
   BlockInfo(InodeFile inodeFile, int blockIndex, long length) {
+    Preconditions.checkArgument((length >> 31) == 0, "length must be smaller than 2^31");
     mInodeFile = inodeFile;
     mBlockIndex = blockIndex;
     mBlockId = computeBlockId(mInodeFile.getId(), mBlockIndex);
@@ -92,7 +99,7 @@ public class BlockInfo {
 
   /**
    * Add a location of the block. It means that the worker has the data of the block in memory.
-   * 
+   *
    * @param workerId The id of the worker
    * @param workerAddress The net address of the worker
    * @param storageDirId The id of the StorageDir which block is located in
@@ -104,16 +111,16 @@ public class BlockInfo {
 
   /**
    * Generate a ClientBlockInfo of the block, which is used for the thrift server.
-   * 
+   *
    * @return the generated ClientBlockInfo
    */
-  public synchronized ClientBlockInfo generateClientBlockInfo() {
+  public synchronized ClientBlockInfo generateClientBlockInfo(TachyonConf tachyonConf) {
     ClientBlockInfo ret = new ClientBlockInfo();
 
     ret.blockId = mBlockId;
     ret.offset = mOffset;
     ret.length = mLength;
-    ret.locations = getLocations();
+    ret.locations = getLocations(tachyonConf);
 
     return ret;
   }
@@ -121,7 +128,7 @@ public class BlockInfo {
   /**
    * Get the list of pairs "blockId, workerId", where the blockId is the id of this block, and the
    * workerId is the id of the worker who has the block's data in memory.
-   * 
+   *
    * @return the list of those pairs
    */
   public synchronized List<Pair<Long, Long>> getBlockIdWorkerIdPairs() {
@@ -134,7 +141,7 @@ public class BlockInfo {
 
   /**
    * Get the InodeFile of the block
-   * 
+   *
    * @return the InodeFile of the block
    */
   public synchronized InodeFile getInodeFile() {
@@ -143,15 +150,22 @@ public class BlockInfo {
 
   /**
    * Get the locations of the block, which are the workers' net address who has the data of the
-   * block in memory.
-   * 
+   * block in its tiered storage. The list is sorted by the storage level alias(MEM, SSD, HDD).
+   * That is, the worker who has the data of the block in its memory is in the top of the list.
+   *
    * @return the net addresses of the locations
    */
-  public synchronized List<NetAddress> getLocations() {
+  public synchronized List<NetAddress> getLocations(TachyonConf tachyonConf) {
     List<NetAddress> ret = new ArrayList<NetAddress>(mLocations.size());
-    ret.addAll(mLocations.values());
+    for (StorageLevelAlias alias : StorageLevelAlias.values()) {
+      for (Map.Entry<NetAddress, Long> entry : mStorageDirIds.entrySet()) {
+        if (alias.getValue() == StorageDirId.getStorageLevelAliasValue(entry.getValue())) {
+          ret.add(entry.getKey());
+        }
+      }
+    }
     if (ret.isEmpty() && mInodeFile.hasCheckpointed()) {
-      UnderFileSystem ufs = UnderFileSystem.get(mInodeFile.getUfsPath());
+      UnderFileSystem ufs = UnderFileSystem.get(mInodeFile.getUfsPath(), tachyonConf);
       List<String> locs = null;
       try {
         locs = ufs.getFileLocations(mInodeFile.getUfsPath(), mOffset);
@@ -160,13 +174,20 @@ public class BlockInfo {
       }
       if (locs != null) {
         for (String loc : locs) {
-          String resolvedHost;
+          String resolvedHost = loc;
+          int resolvedPort = -1;
           try {
-            resolvedHost = NetworkUtils.resolveHostName(loc);
-          } catch (UnknownHostException e) {
-            resolvedHost = loc;
+            String[] ipport = loc.split(":");
+            if (ipport.length == 2) {
+              resolvedHost = NetworkUtils.resolveHostName(ipport[0]);
+              resolvedPort = Integer.parseInt(ipport[1]);
+            }
+          } catch (UnknownHostException uhe) {
+            continue;
+          } catch (NumberFormatException nfe) {
+            continue;
           }
-          ret.add(new NetAddress(resolvedHost, -1, -1));
+          ret.add(new NetAddress(resolvedHost, resolvedPort, -1));
         }
       }
     }
@@ -188,7 +209,7 @@ public class BlockInfo {
 
   /**
    * Remove the worker from the block's locations
-   * 
+   *
    * @param workerId The id of the removed worker
    */
   public synchronized void removeLocation(long workerId) {

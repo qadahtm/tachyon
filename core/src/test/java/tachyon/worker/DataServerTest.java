@@ -29,11 +29,12 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
 
+import tachyon.Constants;
 import tachyon.TachyonURI;
 import tachyon.TestUtils;
 import tachyon.client.TachyonFS;
 import tachyon.client.WriteType;
-import tachyon.conf.WorkerConf;
+import tachyon.conf.TachyonConf;
 import tachyon.master.LocalTachyonCluster;
 import tachyon.thrift.ClientBlockInfo;
 import tachyon.thrift.ClientFileInfo;
@@ -49,32 +50,31 @@ import tachyon.worker.nio.DataServerMessage;
 public class DataServerTest {
   private static final int WORKER_CAPACITY_BYTES = 1000;
   private static final int USER_QUOTA_UNIT_BYTES = 100;
-  private static final int SLEEP_MS = WorkerConf.get().TO_MASTER_HEARTBEAT_INTERVAL_MS * 2 + 10;
 
   @Parameterized.Parameters
   public static Collection<Object[]> data() {
     // creates a new instance of DataServerTest for each network type
     List<Object[]> list = new ArrayList<Object[]>();
-    for (final NetworkType type : NetworkType.values()) {
-      list.add(new Object[] {type});
-    }
+    list.add(new Object[] { "tachyon.worker.netty.NettyDataServer" });
+    list.add(new Object[] { "tachyon.worker.nio.NIODataServer" });
     return list;
   }
 
-  private final NetworkType mType;
+  private final String mDataServerClass;
   private LocalTachyonCluster mLocalTachyonCluster = null;
 
   private TachyonFS mTFS = null;
 
-  public DataServerTest(NetworkType type) {
-    mType = type;
+  private TachyonConf mWorkerTachyonConf;
+
+  public DataServerTest(String className) {
+    mDataServerClass = className;
   }
 
   @After
   public final void after() throws Exception {
     mLocalTachyonCluster.stop();
-    System.clearProperty("tachyon.user.quota.unit.bytes");
-    System.clearProperty("tachyon.worker.network.type");
+    System.clearProperty(Constants.WORKER_DATA_SEVRER);
   }
 
   /**
@@ -98,17 +98,18 @@ public class DataServerTest {
   /**
    * Asserts that the message back matches the block response protocols.
    */
-  private void assertValid(final DataServerMessage msg, final int expectedSize, final long blockId,
-      final long offset, final long length) {
+  private void assertValid(final DataServerMessage msg, final int expectedSize,
+      final long blockId, final long offset, final long length) {
     assertValid(msg, TestUtils.getIncreasingByteBuffer(expectedSize), blockId, offset, length);
   }
 
   @Before
   public final void before() throws IOException {
-    System.setProperty("tachyon.user.quota.unit.bytes", USER_QUOTA_UNIT_BYTES + "");
-    System.setProperty("tachyon.worker.network.type", mType.toString());
-    mLocalTachyonCluster = new LocalTachyonCluster(WORKER_CAPACITY_BYTES);
+    System.setProperty(Constants.WORKER_DATA_SEVRER, mDataServerClass);
+    mLocalTachyonCluster = new LocalTachyonCluster(WORKER_CAPACITY_BYTES, USER_QUOTA_UNIT_BYTES,
+        Constants.GB);
     mLocalTachyonCluster.start();
+    mWorkerTachyonConf = mLocalTachyonCluster.getWorkerTachyonConf();
     mTFS = mLocalTachyonCluster.getClient();
   }
 
@@ -154,7 +155,8 @@ public class DataServerTest {
     DataServerMessage recvMsg2 = request(block2);
     assertValid(recvMsg2, length, block2.getBlockId(), 0, length);
 
-    CommonUtils.sleepMs(null, SLEEP_MS);
+    CommonUtils.sleepMs(null,
+        TestUtils.getToMasterHeartBeatIntervalMs(mWorkerTachyonConf) * 2 + 10);
     ClientFileInfo fileInfo = mTFS.getFileStatus(-1, new TachyonURI("/readFile1"));
     Assert.assertEquals(0, fileInfo.inMemoryPercentage);
   }

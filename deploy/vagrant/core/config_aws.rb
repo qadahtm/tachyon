@@ -3,14 +3,16 @@
 
 # AWS specific configurations go here
 
-def config_aws(config, i, total, name)
+def config_aws(config, i, total, name, version)
   config.vm.box = "dummy"
   config.vm.box_url = 
     "https://github.com/mitchellh/vagrant-aws/raw/master/dummy.box"
   config.ssh.username = "ec2-user"
   config.ssh.private_key_path = KEY_PATH
-  config.vm.synced_folder "../../", "/tachyon", type: "rsync", 
-            rsync__exclude: ["../../.git/", "shared/"]
+  if version == "Local"
+    config.vm.synced_folder "../../", "/tachyon", type: "rsync", 
+            rsync__exclude: ["../../.git", "shared/"]
+  end
   config.vm.synced_folder "./", "/vagrant", type: "rsync", 
             rsync__exclude: ["shared/"]
 
@@ -20,6 +22,7 @@ def config_aws(config, i, total, name)
     aws.ami = AMI
     aws.region = REGION
     aws.instance_type = INSTANCE_TYPE
+    aws.block_device_mapping = BLOCK_DEVICE_MAPPING
     aws.tags = {
       'Name' => TAG + name,
     }
@@ -33,3 +36,4 @@ def config_aws(config, i, total, name)
 
   end
 end
+

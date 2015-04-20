@@ -1,9 +1,10 @@
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
   <parent>
     <groupId>org.tachyonproject</groupId>
     <artifactId>tachyon-parent</artifactId>
-    <version>0.6.3</version>
+    <version>0.7.0-SNAPSHOT</version>
   </parent>
   <artifactId>tachyon</artifactId>
   <packaging>jar</packaging>
@@ -55,7 +56,7 @@
     <dependency>
       <groupId>junit</groupId>
       <artifactId>junit</artifactId>
-      <version>4.10</version>
+      <version>${junit.version}</version>
       <scope>test</scope>
     </dependency>
     <dependency>
@@ -143,92 +144,50 @@
       <artifactId>jackson-databind</artifactId>
       <version>2.3.0</version>
     </dependency>
+    <dependency>
+      <groupId>org.apache.hadoop</groupId>
+      <artifactId>hadoop-client</artifactId>
+      <version>${hadoop.version}</version>
+      <exclusions>
+        <exclusion>
+          <groupId>asm</groupId>
+          <artifactId>asm</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>org.jboss.netty</groupId>
+          <artifactId>netty</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>com.google.guava</groupId>
+          <artifactId>guava</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>commons-httpclient</groupId>
+      <artifactId>commons-httpclient</artifactId>
+      <version>3.0.1</version>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <profiles>
     <profile>
-      <id>localTest</id>
+      <id>contractTest</id>
       <activation>
         <property>
           <name>test.profile</name>
-          <value>local</value>
-        </property>
-        <activeByDefault>true</activeByDefault>
-      </activation>
-      <properties>
-        <ufs />
-      </properties>
-      <build>
-        <plugins>
-          <plugin>
-            <groupId>org.apache.maven.plugins</groupId>
-            <artifactId>maven-compiler-plugin</artifactId>
-            <version>3.2</version>
-            <executions>
-              <execution>
-                <id>default-testCompile</id>
-                <phase>test-compile</phase>
-                <configuration>
-                  <testExcludes>
-                    <exclude>**/LocalMiniDFSCluster.java</exclude>
-                  </testExcludes>
-                  <compilerArgs>
-                    <arg>-Xlint:-unchecked</arg>
-                  </compilerArgs>
-                </configuration>
-                <goals>
-                  <goal>testCompile</goal>
-                </goals>
-              </execution>
-            </executions>
-          </plugin>
-        </plugins>
-      </build>
-      <dependencies>
-        <dependency>
-          <groupId>org.apache.hadoop</groupId>
-          <artifactId>hadoop-client</artifactId>
-          <version>${hadoop.version}</version>
-          <exclusions>
-            <exclusion>
-              <groupId>asm</groupId>
-              <artifactId>asm</artifactId>
-            </exclusion>
-            <exclusion>
-              <groupId>org.jboss.netty</groupId>
-              <artifactId>netty</artifactId>
-            </exclusion>
-            <exclusion>
-              <groupId>com.google.guava</groupId>
-              <artifactId>guava</artifactId>
-            </exclusion>
-          </exclusions>
-        </dependency>
-        <dependency>
-          <groupId>commons-httpclient</groupId>
-          <artifactId>commons-httpclient</artifactId>
-          <version>3.0.1</version>
-          <scope>test</scope>
-        </dependency>
-      </dependencies>
-    </profile>
-
-    <profile>
-      <id>hdfsTest</id>
-      <activation>
-        <property>
-          <name>test.profile</name>
-          <value>hdfs</value>
+          <value>contractTest</value>
         </property>
       </activation>
       <properties>
-        <ufs>tachyon.LocalMiniDFSCluster</ufs>
+        <ufs></ufs>
       </properties>
       <dependencies>
         <dependency>
           <groupId>org.apache.hadoop</groupId>
           <artifactId>hadoop-minicluster</artifactId>
-          <version>${hadoop.version}</version>
+          <version>2.6.0</version>
           <exclusions>
             <exclusion>
               <groupId>asm</groupId>
@@ -242,58 +201,7 @@
         </dependency>
       </dependencies>
     </profile>
-
-    <profile>
-      <id>glusterfsTest</id>
-      <activation>
-        <property>
-          <name>test.profile</name>
-          <value>glusterfs</value>
-        </property>
-      </activation>
-      <properties>
-        <ufs>tachyon.GlusterfsCluster</ufs>
-      </properties>
-      <dependencies>
-        <dependency>
-          <groupId>org.gluster</groupId>
-          <artifactId>glusterfs-hadoop</artifactId>
-          <version>${glusterfs-hadoop.version}</version>
-          <type>jar</type>
-          <scope>compile</scope>
-        </dependency>
-        <dependency>
-          <groupId>org.apache.hadoop</groupId>
-          <artifactId>hadoop-client</artifactId>
-          <version>${hadoop.version}</version>
-        </dependency>
-      </dependencies>
-      <build>
-        <plugins>
-          <plugin>
-            <groupId>org.apache.maven.plugins</groupId>
-            <artifactId>maven-compiler-plugin</artifactId>
-            <version>3.2</version>
-            <executions>
-              <execution>
-                <id>default-testCompile</id>
-                <phase>test-compile</phase>
-                <configuration>
-                  <testExcludes>
-                    <exclude>**/LocalMiniDFSCluster.java</exclude>
-                  </testExcludes>
-                </configuration>
-                <goals>
-                  <goal>testCompile</goal>
-                </goals>
-              </execution>
-            </executions>
-          </plugin>
-        </plugins>
-      </build>
-    </profile>
   </profiles>
-
   <build>
     <resources>
       <resource>
@@ -319,6 +227,21 @@
               <goal>compile</goal>
             </goals>
           </execution>
+          <execution>
+            <id>default-testCompile</id>
+            <phase>test-compile</phase>
+            <configuration>
+              <testExcludes>
+                <exclude>**/hadoop/contract/**</exclude>
+              </testExcludes>
+              <compilerArgs>
+                <arg>-Xlint:-unchecked</arg>
+              </compilerArgs>
+            </configuration>
+            <goals>
+              <goal>testCompile</goal>
+            </goals>
+          </execution>
         </executions>
       </plugin>
       <plugin>
@@ -333,7 +256,6 @@
               <goal>shade</goal>
             </goals>
             <configuration>
-              <promoteTransitiveDependencies>true</promoteTransitiveDependencies>
               <artifactSet>
                 <includes>
                   <include>org.apache.thrift:libthrift</include>
@@ -386,7 +308,7 @@
         <artifactId>maven-surefire-plugin</artifactId>
         <version>2.14</version>
         <configuration>
-          <argLine>-Dufs=${ufs} -Djava.security.krb5.realm= -Djava.security.krb5.kdc=</argLine>
+          <argLine>-Djava.security.krb5.realm= -Djava.security.krb5.kdc=</argLine>
           <redirectTestOutputToFile>${test.output.redirect}</redirectTestOutputToFile>
         </configuration>
       </plugin>

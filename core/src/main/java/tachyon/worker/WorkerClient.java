@@ -4,9 +4,9 @@
  * copyright ownership. The ASF licenses this file to You under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance with the License. You may obtain a
  * copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software distributed under the License
  * is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express
  * or implied. See the License for the specific language governing permissions and limitations under
@@ -34,7 +34,7 @@ import org.slf4j.LoggerFactory;
 import tachyon.Constants;
 import tachyon.HeartbeatExecutor;
 import tachyon.HeartbeatThread;
-import tachyon.conf.UserConf;
+import tachyon.conf.TachyonConf;
 import tachyon.master.MasterClient;
 import tachyon.thrift.BlockInfoException;
 import tachyon.thrift.FailedToCheckpointException;
@@ -50,8 +50,8 @@ import tachyon.util.NetworkUtils;
 
 /**
  * The client talks to a worker server. It keeps sending keep alive message to the worker server.
- * 
- * Since WorkerService.Client is not thread safe, this class has to guarantee thread safe.
+ *
+ * Since WorkerService.Client is not thread safe, this class has to guarantee thread safety.
  */
 public class WorkerClient implements Closeable {
   private static final Logger LOG = LoggerFactory.getLogger(Constants.LOGGER_TYPE);
@@ -66,22 +66,25 @@ public class WorkerClient implements Closeable {
   private final ExecutorService mExecutorService;
   private Future<?> mHeartbeat;
 
+  private final TachyonConf mTachyonConf;
+
   /**
    * Create a WorkerClient, with a given MasterClient.
-   * 
+   *
    * @param masterClient
    * @param executorService
    * @throws IOException
    */
-  public WorkerClient(MasterClient masterClient, ExecutorService executorService)
+  public WorkerClient(MasterClient masterClient, ExecutorService executorService, TachyonConf conf)
       throws IOException {
     mMasterClient = masterClient;
     mExecutorService = executorService;
+    mTachyonConf = conf;
   }
 
   /**
    * Update the latest block access time on the worker.
-   * 
+   *
    * @param blockId The id of the block
    * @throws IOException
    */
@@ -99,7 +102,7 @@ public class WorkerClient implements Closeable {
 
   /**
    * Notify the worker that the checkpoint file of the file has been added.
-   * 
+   *
    * @param fileId The id of the checkpointed file
    * @throws IOException
    */
@@ -124,16 +127,16 @@ public class WorkerClient implements Closeable {
 
   /**
    * Notify the worker to checkpoint the file asynchronously.
-   * 
-   * @param fid The id of the file
+   *
+   * @param fileId The id of the file
    * @return true if success, false otherwise
    * @throws IOException
    */
-  public synchronized boolean asyncCheckpoint(int fid) throws IOException {
+  public synchronized boolean asyncCheckpoint(int fileId) throws IOException {
     mustConnect();
 
     try {
-      return mClient.asyncCheckpoint(fid);
+      return mClient.asyncCheckpoint(fileId);
     } catch (TachyonException e) {
       throw new IOException(e);
     } catch (TException e) {
@@ -144,7 +147,7 @@ public class WorkerClient implements Closeable {
 
   /**
    * Notify the worker the block is cached.
-   * 
+   *
    * @param blockId The id of the block
    * @throws IOException
    */
@@ -157,8 +160,6 @@ public class WorkerClient implements Closeable {
       throw new IOException(e);
     } catch (BlockInfoException e) {
       throw new IOException(e);
-    } catch (SuspectedFileSizeException e) {
-      throw new IOException(e);
     } catch (TException e) {
       mConnected = false;
       throw new IOException(e);
@@ -167,7 +168,7 @@ public class WorkerClient implements Closeable {
 
   /**
    * Notify worker that the block has been cancelled
-   * 
+   *
    * @param blockId The Id of the block to be cancelled
    * @throws IOException
    */
@@ -201,7 +202,7 @@ public class WorkerClient implements Closeable {
 
   /**
    * Open the connection to the worker. And start the heartbeat thread.
-   * 
+   *
    * @return true if succeed, false otherwise
    * @throws IOException
    */
@@ -209,7 +210,7 @@ public class WorkerClient implements Closeable {
     if (!mConnected) {
       NetAddress workerNetAddress = null;
       try {
-        String localHostName = NetworkUtils.getLocalHostName();
+        String localHostName = NetworkUtils.getLocalHostName(mTachyonConf);
         LOG.info("Trying to get local worker host : " + localHostName);
         workerNetAddress = mMasterClient.user_getWorker(false, localHostName);
         mIsLocal = true;
@@ -242,9 +243,10 @@ public class WorkerClient implements Closeable {
       HeartbeatExecutor heartBeater =
           new WorkerClientHeartbeatExecutor(this, mMasterClient.getUserId());
       String threadName = "worker-heartbeat-" + mWorkerAddress;
+      int interval = mTachyonConf.getInt(Constants.USER_HEARTBEAT_INTERVAL_MS,
+          Constants.SECOND_MS);
       mHeartbeat =
-          mExecutorService.submit(new HeartbeatThread(threadName, heartBeater,
-              UserConf.get().HEARTBEAT_INTERVAL_MS));
+          mExecutorService.submit(new HeartbeatThread(threadName, heartBeater, interval));
 
       try {
         mProtocol.getTransport().open();
@@ -267,7 +269,7 @@ public class WorkerClient implements Closeable {
 
   /**
    * Get the user temporary folder in the under file system of the specified user.
-   * 
+   *
    * @return The user temporary folder in the under file system
    * @throws IOException
    */
@@ -307,7 +309,7 @@ public class WorkerClient implements Closeable {
   /**
    * Lock the block, therefore, the worker will not evict the block from the memory until it is
    * unlocked.
-   * 
+   *
    * @param blockId The id of the block
    * @return the path of the block file locked
    * @throws IOException
@@ -327,7 +329,7 @@ public class WorkerClient implements Closeable {
 
   /**
    * Connect to the worker.
-   * 
+   *
    * @throws IOException
    */
   public synchronized void mustConnect() throws IOException {
@@ -342,7 +344,7 @@ public class WorkerClient implements Closeable {
 
   /**
    * Promote block back to the top StorageTier
-   * 
+   *
    * @param blockId The id of the block that will be promoted
    * @return true if succeed, false otherwise
    * @throws IOException
@@ -360,7 +362,7 @@ public class WorkerClient implements Closeable {
 
   /**
    * Get temporary path for the block from the worker
-   * 
+   *
    * @param blockId The id of the block
    * @param initialBytes The initial size bytes allocated for the block
    * @return the temporary path of the block
@@ -384,7 +386,7 @@ public class WorkerClient implements Closeable {
 
   /**
    * Request space for some block from worker
-   * 
+   *
    * @param blockId The id of the block
    * @param requestBytes The requested space size, in bytes
    * @return true if success, false otherwise
@@ -407,7 +409,7 @@ public class WorkerClient implements Closeable {
 
   /**
    * Unlock the block
-   * 
+   *
    * @param blockId The id of the block
    * @return true if success, false otherwise
    * @throws IOException
@@ -425,7 +427,7 @@ public class WorkerClient implements Closeable {
 
   /**
    * Users' heartbeat to the Worker.
-   * 
+   *
    * @param userId The id of the user
    * @throws IOException
    */

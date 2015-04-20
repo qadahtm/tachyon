@@ -16,7 +16,7 @@
 package tachyon;
 
 /**
- * Used to identify StorageDir in hierarchy store.
+ * Used to identify StorageDir in tiered store.
  */
 public class StorageDirId {
   static final long UNKNOWN = -1;
@@ -64,6 +64,16 @@ public class StorageDirId {
    */
   public static int getStorageLevel(long storageDirId) {
     return ((int) storageDirId >> 24) & 0x0f;
+  }
+
+  /**
+   * Get StorageLevelAlias from StorageDirId
+   *
+   * @param storageDirId Id of the StorageDir
+   * @return the StorageLevelAlias
+   */
+  public static StorageLevelAlias getStorageLevelAlias(long storageDirId) {
+    return StorageLevelAlias.values()[getStorageLevelAliasValue(storageDirId) - 1];
   }
 
   /**

@@ -18,8 +18,9 @@ package tachyon.master;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.HashSet;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import org.slf4j.Logger;
@@ -86,14 +87,15 @@ public class InodeFolder extends Inode {
     return folder;
   }
 
-  private Set<Inode> mChildren = new HashSet<Inode>();
+  private Map<Integer, Inode> mChildrenIds = new HashMap<Integer, Inode>();
+  private Map<String, Inode> mChildrenNames = new HashMap<String, Inode>();
 
   /**
    * Create a new InodeFolder.
    *
    * @param name The name of the folder
-   * @param id The id of the folder
-   * @param parentId The id of the parent of the folder
+   * @param id The inode id of the folder
+   * @param parentId The inode id of the parent of the folder
    * @param creationTimeMs The creation time of the folder, in milliseconds
    */
   public InodeFolder(String name, int id, int parentId, long creationTimeMs) {
@@ -106,7 +108,8 @@ public class InodeFolder extends Inode {
    * @param child The inode to add
    */
   public synchronized void addChild(Inode child) {
-    mChildren.add(child);
+    mChildrenIds.put(child.getId(), child);
+    mChildrenNames.put(child.getName(), child);
   }
 
   /**
@@ -149,18 +152,13 @@ public class InodeFolder extends Inode {
   }
 
   /**
-   * Returns the child with the given id.
+   * Returns the child with the given inode id.
    *
-   * @param fid The id of the child
+   * @param id The inode id of the child
    * @return the inode with the given id, or null if there is no child with that id
    */
-  public synchronized Inode getChild(int fid) {
-    for (Inode child : mChildren) {
-      if (child.getId() == fid) {
-        return child;
-      }
-    }
-    return null;
+  public synchronized Inode getChild(int id) {
+    return mChildrenIds.get(id);
   }
 
   /**
@@ -170,12 +168,7 @@ public class InodeFolder extends Inode {
    * @return the inode with the given name, or null if there is no child with that name
    */
   public synchronized Inode getChild(String name) {
-    for (Inode child : mChildren) {
-      if (child.getName().equals(name)) {
-        return child;
-      }
-    }
-    return null;
+    return mChildrenNames.get(name);
   }
 
   /**
@@ -184,7 +177,7 @@ public class InodeFolder extends Inode {
    * @return an unmodifiable set of the children inodes.
    */
   public synchronized Set<Inode> getChildren() {
-    return ImmutableSet.copyOf(mChildren);
+    return ImmutableSet.copyOf(mChildrenIds.values());
   }
 
   /**
@@ -193,11 +186,7 @@ public class InodeFolder extends Inode {
    * @return the ids of the children
    */
   public synchronized List<Integer> getChildrenIds() {
-    List<Integer> ret = new ArrayList<Integer>(mChildren.size());
-    for (Inode child : mChildren) {
-      ret.add(child.getId());
-    }
-    return ret;
+    return new ArrayList<Integer>(mChildrenIds.keySet());
   }
 
   /**
@@ -206,7 +195,7 @@ public class InodeFolder extends Inode {
    * @return the number of children in the folder.
    */
   public synchronized int getNumberOfChildren() {
-    return mChildren.size();
+    return mChildrenIds.size();
   }
 
   /**
@@ -216,21 +205,20 @@ public class InodeFolder extends Inode {
    * @return true if the inode was removed, false otherwise.
    */
   public synchronized boolean removeChild(Inode child) {
-    return mChildren.remove(child);
+    return (mChildrenIds.remove(child.getId()) != null)
+        && (mChildrenNames.remove(child.getName()) != null);
   }
 
   /**
-   * Removes the given child from the folder.
+   * Removes the given child by its name from the folder.
    *
    * @param name The name of the Inode to remove.
    * @return true if the inode was removed, false otherwise.
    */
   public synchronized boolean removeChild(String name) {
-    for (Inode child : mChildren) {
-      if (child.getName().equals(name)) {
-        mChildren.remove(child);
-        return true;
-      }
+    Inode toRemove = mChildrenNames.remove(name);
+    if (toRemove != null && mChildrenIds.remove(toRemove.getId()) != null) {
+      return true;
     }
     return false;
   }
@@ -238,7 +226,7 @@ public class InodeFolder extends Inode {
   @Override
   public String toString() {
     StringBuilder sb = new StringBuilder("InodeFolder(");
-    sb.append(super.toString()).append(",").append(mChildren).append(")");
+    sb.append(super.toString()).append(",").append(mChildrenIds.values()).append(")");
     return sb.toString();
   }
 

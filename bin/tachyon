@@ -10,6 +10,7 @@ function printUsage {
   echo "Usage: tachyon COMMAND "
   echo "where COMMAND is one of:"
   echo -e "  format [-s]   \t Format Tachyon (if -s specified, only format if underfs doesn't exist)"
+  echo -e "  formatWorker  \t Format Tachyon worker storage"
   echo -e "  bootstrap-conf\t Generate a config file if one doesn't exist"
   echo -e "  tfs           \t Command line input for generic filesystem user client."
   echo -e "  loadufs       \t Load existing files in underlayer filesystem into Tachyon."
@@ -79,6 +80,15 @@ function runTest {
   esac
   $LAUNCHER $bin/tachyon tfs rmr "$file"
   $JAVA -cp $CLASSPATH $TACHYON_JAVA_OPTS "$class" tachyon://$MASTER_ADDRESS:19998 "$file" "$args"
+
+  # If test process received a signal abort early
+  # Exit Codes for signals terminating a JVM are 128 + signal
+  RET=$?
+  if [ $RET -gt 128 ]; then
+    echo "Test process was terminated due to signal"
+    exit $RET
+  fi
+  return $RET
 }
 
 function killAll {
@@ -90,7 +100,7 @@ function killAll {
 
   keyword=$1
   count=0
-  for pid in `ps -A -o pid,command | grep -i "[j]ava" | grep $keyword | awk '{print $1}'`; do
+  for pid in `ps -Aww -o pid,command | grep -i "[j]ava" | grep $keyword | awk '{print $1}'`; do
     kill -15 "$pid" > /dev/null 2>&1
     local cnt=30
     while kill -0 "$pid" > /dev/null 2>&1; do
@@ -106,7 +116,7 @@ function killAll {
     done
     count=`expr $count + 1`
   done
-  echo "Killed $count processes"
+  echo "Killed $count processes on `hostname`"
 }
 
 function copyDir {
@@ -212,6 +222,14 @@ elif [ "$COMMAND" == "runTests" ]; then
       echo $LAUNCHER $bin/tachyon runTest $example $op
       $LAUNCHER $bin/tachyon runTest $example $op
       st=$?
+
+      # If test process received a signal abort early
+      # Exit Codes for signals terminating a JVM are 128 + signal
+      if [ $st -gt 128 ]; then
+        # Received some kind of signal
+        echo "Test process was terminated due to signal"
+        exit $st
+      fi
       failed=$(( $failed + $st ))
     done
   done

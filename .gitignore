@@ -1,7 +1,9 @@
 tests.log*
 .classpath
 .project
+.checkstyle
 *.iml
+.DS_STORE
 .idea/
 .metadata/
 .settings/
@@ -19,3 +21,4 @@ journal/
 logs/
 script/
 target/
+**/tachyon-site.properties

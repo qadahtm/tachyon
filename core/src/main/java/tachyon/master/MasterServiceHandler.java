@@ -27,9 +27,8 @@ import java.util.Set;
 
 import org.apache.thrift.TException;
 
+import tachyon.Constants;
 import tachyon.TachyonURI;
-import tachyon.UnderFileSystem;
-import tachyon.conf.CommonConf;
 import tachyon.thrift.BlockInfoException;
 import tachyon.thrift.ClientBlockInfo;
 import tachyon.thrift.ClientDependencyInfo;
@@ -48,6 +47,7 @@ import tachyon.thrift.SuspectedFileSizeException;
 import tachyon.thrift.TableColumnException;
 import tachyon.thrift.TableDoesNotExistException;
 import tachyon.thrift.TachyonException;
+import tachyon.underfs.UnderFileSystem;
 import tachyon.util.CommonUtils;
 
 /**
@@ -128,7 +128,7 @@ public class MasterServiceHandler implements MasterService.Iface {
       throws FileAlreadyExistException, InvalidPathException, BlockInfoException,
       SuspectedFileSizeException, TachyonException, TException {
     if (!ufsPath.isEmpty()) {
-      UnderFileSystem underfs = UnderFileSystem.get(ufsPath);
+      UnderFileSystem underfs = UnderFileSystem.get(ufsPath, mMasterInfo.getTachyonConf());
       try {
         long ufsBlockSizeByte = underfs.getBlockSizeByte(ufsPath);
         long fileSizeByte = underfs.getFileSize(ufsPath);
@@ -173,6 +173,11 @@ public class MasterServiceHandler implements MasterService.Iface {
   }
 
   @Override
+  public long user_getCapacityBytes() throws TException {
+    return mMasterInfo.getCapacityBytes();
+  }
+
+  @Override
   public ClientBlockInfo user_getClientBlockInfo(long blockId) throws FileDoesNotExistException,
       BlockInfoException, TException {
     return mMasterInfo.getClientBlockInfo(blockId);
@@ -213,7 +218,12 @@ public class MasterServiceHandler implements MasterService.Iface {
 
   @Override
   public String user_getUfsAddress() throws TException {
-    return CommonConf.get().UNDERFS_ADDRESS;
+    return mMasterInfo.getTachyonConf().get(Constants.UNDERFS_ADDRESS, "/underFSStorage");
+  }
+
+  @Override
+  public long user_getUsedBytes() throws TException {
+    return mMasterInfo.getUsedBytes();
   }
 
   @Override
@@ -296,10 +306,9 @@ public class MasterServiceHandler implements MasterService.Iface {
   }
 
   @Override
-  public void worker_cacheBlock(long workerId, long workerUsedBytes, long storageDirId,
-      long blockId, long length) throws FileDoesNotExistException, SuspectedFileSizeException,
-      BlockInfoException, TException {
-    mMasterInfo.cacheBlock(workerId, workerUsedBytes, storageDirId, blockId, length);
+  public void worker_cacheBlock(long workerId, long usedBytesOnTier, long storageDirId,
+      long blockId, long length) throws FileDoesNotExistException, BlockInfoException, TException {
+    mMasterInfo.cacheBlock(workerId, usedBytesOnTier, storageDirId, blockId, length);
   }
 
   @Override
@@ -314,15 +323,17 @@ public class MasterServiceHandler implements MasterService.Iface {
   }
 
   @Override
-  public Command worker_heartbeat(long workerId, long usedBytes,
+  public Command worker_heartbeat(long workerId, List<Long> usedBytesOnTiers,
       List<Long> removedBlockIds, Map<Long, List<Long>> addedBlockIds)
       throws BlockInfoException, TException {
-    return mMasterInfo.workerHeartbeat(workerId, usedBytes, removedBlockIds, addedBlockIds);
+    return mMasterInfo.workerHeartbeat(workerId, usedBytesOnTiers, removedBlockIds, addedBlockIds);
   }
 
   @Override
-  public long worker_register(NetAddress workerNetAddress, long totalBytes, long usedBytes,
-      Map<Long, List<Long>> currentBlockIds) throws BlockInfoException, TException {
-    return mMasterInfo.registerWorker(workerNetAddress, totalBytes, usedBytes, currentBlockIds);
+  public long worker_register(NetAddress workerNetAddress, List<Long> totalBytesOnTiers,
+      List<Long> usedBytesOnTiers, Map<Long, List<Long>> currentBlockIds)
+          throws BlockInfoException, TException {
+    return mMasterInfo.registerWorker(workerNetAddress, totalBytesOnTiers, usedBytesOnTiers,
+        currentBlockIds);
   }
 }

@@ -17,13 +17,16 @@ package tachyon;
 import java.io.File;
 import java.io.IOException;
 
+import tachyon.conf.TachyonConf;
+import tachyon.underfs.UnderFileSystemCluster;
+
 /**
  * The mock cluster for local file system as UnderFileSystemSingleLocal.
  */
 public class LocalFilesystemCluster extends UnderFileSystemCluster {
 
-  public LocalFilesystemCluster(String baseDir) {
-    super(baseDir);
+  public LocalFilesystemCluster(String baseDir, TachyonConf tachyonConf) {
+    super(baseDir, tachyonConf);
   }
 
   @Override

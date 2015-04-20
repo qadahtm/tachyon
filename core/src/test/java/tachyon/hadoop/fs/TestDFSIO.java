@@ -58,8 +58,10 @@ import org.junit.BeforeClass;
 import org.junit.Test;
 
 import tachyon.Constants;
+import tachyon.conf.TachyonConf;
 import tachyon.hadoop.TFS;
 import tachyon.master.LocalTachyonCluster;
+import tachyon.util.ConfUtils;
 
 /**
  * Distributed i/o benchmark.
@@ -104,7 +106,7 @@ public class TestDFSIO implements Tool {
       + " [-rootDir]";
 
   // Constants for Tachyon
-  private static final int BLOCK_SIZE = 30;
+  private static final int BLOCK_SIZE = 8192;
   private Configuration config;
   private static LocalTachyonCluster mLocalTachyonCluster = null;
   private static URI mLocalTachyonClusterUri = null;
@@ -117,9 +119,9 @@ public class TestDFSIO implements Tool {
   }
 
   private static enum TestType {
-    TEST_TYPE_READ("read"), TEST_TYPE_WRITE("write"), TEST_TYPE_CLEANUP("cleanup"), TEST_TYPE_APPEND(
-        "append"), TEST_TYPE_READ_RANDOM("random read"), TEST_TYPE_READ_BACKWARD("backward read"), TEST_TYPE_READ_SKIP(
-        "skip read");
+    TEST_TYPE_READ("read"), TEST_TYPE_WRITE("write"), TEST_TYPE_CLEANUP("cleanup"),
+        TEST_TYPE_APPEND("append"), TEST_TYPE_READ_RANDOM("random read"),
+        TEST_TYPE_READ_BACKWARD("backward read"), TEST_TYPE_READ_SKIP("skip read");
 
     private String type;
 
@@ -206,15 +208,18 @@ public class TestDFSIO implements Tool {
     bench.getConf().setBoolean("dfs.support.append", true);
 
     // Start local Tachyon cluster
-    System.setProperty("tachyon.user.quota.unit.bytes", "100000");
-    System.setProperty("tachyon.user.default.block.size.byte", String.valueOf(BLOCK_SIZE));
-    mLocalTachyonCluster = new LocalTachyonCluster(500000);
+    mLocalTachyonCluster = new LocalTachyonCluster(500000, 100000, BLOCK_SIZE);
     mLocalTachyonCluster.start();
 
     mLocalTachyonClusterUri = URI.create(mLocalTachyonCluster.getMasterUri());
     bench.getConf().set("fs.defaultFS", mLocalTachyonClusterUri.toString());
     bench.getConf().set("fs.default.name", mLocalTachyonClusterUri.toString());
     bench.getConf().set("fs." + Constants.SCHEME + ".impl", TFS.class.getName());
+
+    // Store TachyonConf in Hadoop Configuration
+    TachyonConf tachyonConf = mLocalTachyonCluster.getMasterTachyonConf();
+    ConfUtils.storeToHadoopConfiguration(tachyonConf, bench.getConf());
+
     FileSystem fs = FileSystem.get(mLocalTachyonClusterUri, bench.getConf());
     bench.createControlFile(fs, DEFAULT_NR_BYTES, DEFAULT_NR_FILES);
 
@@ -233,8 +238,6 @@ public class TestDFSIO implements Tool {
 
     // Stop local Tachyon cluster
     mLocalTachyonCluster.stop();
-    System.clearProperty("tachyon.user.quota.unit.bytes");
-    System.clearProperty("tachyon.user.default.block.size.byte");
   }
 
   public static void testWrite() throws Exception {
@@ -554,8 +557,8 @@ public class TestDFSIO implements Tool {
 
   /**
    * Mapper class for random reads. The mapper chooses a position in the file and reads bufferSize
-   * bytes starting at the chosen position. It stops after reading the totalSize bytes, specified by
-   * -size.
+   * bytes starting at the chosen position. It stops after reading the totalSize bytes, specified
+   * by size.
    * 
    * There are three type of reads. 1) Random read always chooses a random position to read from:
    * skipSize = 0 2) Backward read reads file in reverse order : skipSize < 0 3) Skip-read skips

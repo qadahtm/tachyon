@@ -24,7 +24,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import tachyon.Constants;
-import tachyon.UnderFileSystem;
+import tachyon.conf.TachyonConf;
+import tachyon.underfs.UnderFileSystem;
 import tachyon.util.CommonUtils;
 
 /**
@@ -53,10 +54,12 @@ public class FileOutStream extends OutStream {
    * @param file the output file
    * @param opType the OutStream's write type
    * @param ufsConf the under file system configuration
+   * @param tachyonConf the TachyonConf instance for this file output stream.
    * @throws IOException
    */
-  FileOutStream(TachyonFile file, WriteType opType, Object ufsConf) throws IOException {
-    super(file, opType);
+  FileOutStream(TachyonFile file, WriteType opType, Object ufsConf, TachyonConf tachyonConf)
+      throws IOException {
+    super(file, opType, tachyonConf);
 
     mBlockCapacityByte = file.getBlockSizeByte();
 
@@ -68,11 +71,11 @@ public class FileOutStream extends OutStream {
     mCachedBytes = 0;
 
     if (mWriteType.isThrough()) {
-      mUnderFsFile = CommonUtils.concat(mTachyonFS.createAndGetUserUfsTempFolder(ufsConf), 
-            mFile.mFileId);
-      UnderFileSystem underfsClient = UnderFileSystem.get(mUnderFsFile, ufsConf);
+      mUnderFsFile = CommonUtils.concat(mTachyonFS.createAndGetUserUfsTempFolder(ufsConf),
+          mFile.mFileId);
+      UnderFileSystem underfsClient = UnderFileSystem.get(mUnderFsFile, ufsConf, tachyonConf);
       if (mBlockCapacityByte > Integer.MAX_VALUE) {
-        throw new IOException("BLOCK_CAPCAITY (" + mBlockCapacityByte + ") can not bigger than "
+        throw new IOException("BLOCK_CAPACITY (" + mBlockCapacityByte + ") can not bigger than "
             + Integer.MAX_VALUE);
       }
       mCheckpointOutputStream = underfsClient.create(mUnderFsFile, (int) mBlockCapacityByte);
@@ -96,7 +99,7 @@ public class FileOutStream extends OutStream {
       if (mWriteType.isThrough()) {
         if (mCancel) {
           mCheckpointOutputStream.close();
-          UnderFileSystem underFsClient = UnderFileSystem.get(mUnderFsFile);
+          UnderFileSystem underFsClient = UnderFileSystem.get(mUnderFsFile, mTachyonConf);
           underFsClient.delete(mUnderFsFile, false);
         } else {
           mCheckpointOutputStream.flush();
@@ -156,11 +159,10 @@ public class FileOutStream extends OutStream {
     }
 
     if (mWriteType.isCache()) {
-      mCurrentBlockId = mFile.getBlockIdBasedOnOffset(mCachedBytes);
+      int offset = (int) (mCachedBytes / mBlockCapacityByte);
+      mCurrentBlockId = mFile.getBlockId(offset);
       mCurrentBlockLeftByte = mBlockCapacityByte;
-
-      mCurrentBlockOutStream =
-          new BlockOutStream(mFile, mWriteType, (int) (mCachedBytes / mBlockCapacityByte));
+      mCurrentBlockOutStream = new BlockOutStream(mFile, mWriteType, offset, mTachyonConf);
     }
   }
 
@@ -193,7 +195,6 @@ public class FileOutStream extends OutStream {
             mCurrentBlockOutStream.write(b, tOff, tLen);
             mCurrentBlockLeftByte -= tLen;
             mCachedBytes += tLen;
-            tOff += tLen;
             tLen = 0;
           } else {
             mCurrentBlockOutStream.write(b, tOff, (int) mCurrentBlockLeftByte);

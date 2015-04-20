@@ -4,9 +4,9 @@
  * copyright ownership. The ASF licenses this file to You under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance with the License. You may obtain a
  * copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software distributed under the License
  * is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express
  * or implied. See the License for the specific language governing permissions and limitations under
@@ -24,8 +24,8 @@ import java.util.Set;
 import com.google.common.collect.HashMultimap;
 
 import tachyon.Pair;
-import tachyon.worker.hierarchy.BlockInfo;
-import tachyon.worker.hierarchy.StorageDir;
+import tachyon.worker.tiered.BlockInfo;
+import tachyon.worker.tiered.StorageDir;
 
 /**
  * Used to evict old blocks among several StorageDirs by LRU strategy.
@@ -42,10 +42,11 @@ public final class EvictLRU extends EvictLRUBase {
     List<BlockInfo> blockInfoList = new ArrayList<BlockInfo>();
     Map<StorageDir, Pair<Long, Long>> dir2LRUBlocks = new HashMap<StorageDir, Pair<Long, Long>>();
     HashMultimap<StorageDir, Long> dir2BlocksToEvict = HashMultimap.create();
-    Map<StorageDir, Long> sizeToEvict = new HashMap<StorageDir, Long>();
-    // If no StorageDir has enough space for the request size, continue; if no block can be evicted,
+    Map<StorageDir, Long> dir2SizeToEvict = new HashMap<StorageDir, Long>();
+    // If no StorageDir has enough space for the request, continue; if no block can be evicted,
     // return null; and if eviction size plus free space of some StorageDir is larger than request
-    // size, return the Pair of StorageDir and blockInfoList
+    // size, return the Pair of StorageDir and blockInfoList.
+    // TODO Remove while(true). It is in general bad to have the while-loop on true.
     while (true) {
       // Get oldest block in StorageDir candidates
       Pair<StorageDir, Long> candidate =
@@ -56,18 +57,16 @@ public final class EvictLRU extends EvictLRUBase {
       }
       long blockId = candidate.getSecond();
       long blockSize = dir.getBlockSize(blockId);
-      // Add info of the block to the list
-      blockInfoList.add(new BlockInfo(dir, blockId, blockSize));
-      dir2BlocksToEvict.put(dir, blockId);
-      dir2LRUBlocks.remove(dir);
-      long evictBytes;
-      // Update eviction size for this StorageDir
-      if (sizeToEvict.containsKey(dir)) {
-        evictBytes = sizeToEvict.get(dir) + blockSize;
-      } else {
-        evictBytes = blockSize;
+      long evictBytes = dir2SizeToEvict.containsKey(dir) ? dir2SizeToEvict.get(dir) : 0L;
+      if (blockSize != -1) {
+        // Add info of the block to the list
+        blockInfoList.add(new BlockInfo(dir, blockId, blockSize));
+        dir2BlocksToEvict.put(dir, blockId);
+        evictBytes += blockSize;
+        dir2SizeToEvict.put(dir, evictBytes);
       }
-      sizeToEvict.put(dir, evictBytes);
+      dir2LRUBlocks.remove(dir);
+
       if (evictBytes + dir.getAvailableBytes() >= requestBytes) {
         return new Pair<StorageDir, List<BlockInfo>>(dir, blockInfoList);
       }
@@ -75,8 +74,8 @@ public final class EvictLRU extends EvictLRUBase {
   }
 
   /**
-   * Get block to be evicted by choosing the oldest block in StorageDir candidates
-   * 
+   * Get a block to evict by choosing the oldest block in StorageDir candidates
+   *
    * @param storageDirs StorageDir candidates that the space will be allocated in
    * @param dir2LRUBlocks the oldest access information of each StorageDir
    * @param dir2BlocksToEvict Ids of blocks that have been selected to be evicted
@@ -91,16 +90,15 @@ public final class EvictLRU extends EvictLRUBase {
     long oldestTime = Long.MAX_VALUE;
     for (StorageDir dir : storageDirs) {
       Pair<Long, Long> lruBlock;
-      if (!dir2LRUBlocks.containsKey(dir)) {
+      if (dir2LRUBlocks.containsKey(dir)) {
+        lruBlock = dir2LRUBlocks.get(dir);
+      } else {
         Set<Long> blocksToEvict = dir2BlocksToEvict.get(dir);
         lruBlock = getLRUBlock(dir, blocksToEvict, pinList);
-        if (lruBlock.getFirst() != -1) {
-          dir2LRUBlocks.put(dir, lruBlock);
-        } else {
+        if (lruBlock.getFirst() == -1) {
           continue;
         }
-      } else {
-        lruBlock = dir2LRUBlocks.get(dir);
+        dir2LRUBlocks.put(dir, lruBlock);
       }
       if (lruBlock.getSecond() < oldestTime) {
         blockId = lruBlock.getFirst();
