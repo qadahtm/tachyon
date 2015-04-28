@@ -287,10 +287,15 @@ public class WordCount implements Callable<Boolean> {
   }
   
   private static void usage() {
-    System.out.println("java -cp target/tachyon-" + Version.VERSION + "-jar-with-dependencies.jar "
+    System.out.println("USAGE: java -cp target/tachyon-" + Version.VERSION 
+        + "-jar-with-dependencies.jar "
         + WordCount.class.getName()
         + " <master address> <read file path> <intermediate write file path> "
         + "<result file path> <write type> <read type>");
+    System.out.println("E.g., java -cp ~/my_projects/tachyon/core/target/"
+        + "tachyon-0.7.0-SNAPSHOT-jar-with-dependencies.jar "
+        + "tachyon.examples.WordCount tachyon://localhost:19998 /big.txt "
+        + "/big_out.txt /big_result.txt TRY_CACHE CACHE");
     System.exit(-1);
   }
 }
