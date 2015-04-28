@@ -44,8 +44,8 @@ import tachyon.client.WriteType;
 import tachyon.client.ReadType;
 import tachyon.client.FileInStream;
 import tachyon.client.FileOutStream;
-import tachyon.util.CommonUtils;
 import tachyon.conf.TachyonConf;
+import tachyon.util.CommonUtils;
 
 public class WordCount implements Callable<Boolean> {
   private static final Logger LOG = LoggerFactory.getLogger(Constants.LOGGER_TYPE);
@@ -267,21 +267,30 @@ public class WordCount implements Callable<Boolean> {
   }
 
   public static void main(String[] args) throws IllegalArgumentException {
-    String masterAddress = "tachyon://localhost:19998";
-    String fileReadPath = "/big.txt";
-    //String fileReadPath = "/test.txt";
-    String fileWrittenPath = "/big_out.txt";
-    //String fileWrittenPath = "/test_out.txt";
-    String fileResultPath = "/big_result.txt";
-    //String fileResultPath = "/test_result.txt";
-    String readType = "CACHE";
-    String writeType = "TRY_CACHE";
+    if (args.length != 6) {
+      usage();
+    }
+    
+//    String masterAddress = "tachyon://localhost:19998";
+//    String fileReadPath = "/big.txt";
+//    String fileWrittenPath = "/big_out.txt";
+//    String fileResultPath = "/big_result.txt";
+//    String readType = "CACHE";
+//    String writeType = "TRY_CACHE";
 
-    Utils.runExample(new WordCount(new TachyonURI(masterAddress), 
-        new TachyonURI(fileReadPath), 
-        new TachyonURI(fileWrittenPath), 
-        new TachyonURI(fileResultPath),
-        WriteType.valueOf(writeType), 
-        ReadType.valueOf(readType)));
+    Utils.runExample(new WordCount(new TachyonURI(args[0]), 
+        new TachyonURI(args[1]), 
+        new TachyonURI(args[2]), 
+        new TachyonURI(args[3]),
+        WriteType.valueOf(args[4]), 
+        ReadType.valueOf(args[5])));
+  }
+  
+  private static void usage() {
+    System.out.println("java -cp target/tachyon-" + Version.VERSION + "-jar-with-dependencies.jar "
+        + WordCount.class.getName()
+        + " <master address> <read file path> <intermediate write file path> "
+        + "<result file path> <write type> <read type>");
+    System.exit(-1);
   }
 }
