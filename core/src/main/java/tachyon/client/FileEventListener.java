@@ -17,11 +17,13 @@ package tachyon.client;
 
 import java.util.List;
 
+import tachyon.thrift.ClientFileInfo;
+
 public interface FileEventListener {
 
   void onBlockReady(long blockId);
 
-  void onFileUpdate(List<Long> blockIds);
+  void onFileUpdate(ClientFileInfo newFileInfo);
   
   void onFileCreated();
   

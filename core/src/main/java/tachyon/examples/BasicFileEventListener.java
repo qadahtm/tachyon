@@ -42,9 +42,10 @@ public class BasicFileEventListener {
         new FileEventListener() {
 
           @Override
-          public void onFileUpdate(List<Long> blockIds) {
+          public void onFileUpdate(ClientFileInfo newFileInfo) {
             // TODO Auto-generated method stub
             System.out.println("file updated");
+            
           }
 
           @Override
@@ -126,7 +127,7 @@ public class BasicFileEventListener {
           if (mFileInfo.getLastModificationTimeMs() < newFileInfo
               .getLastModificationTimeMs()) {
             mFileInfo = newFileInfo;
-            mFEListener.onFileUpdate(newFileInfo.blockIds);            
+            mFEListener.onFileUpdate(newFileInfo);            
           }
 
         }
