@@ -17,6 +17,11 @@
     <findbugs.path>${project.parent.basedir}/build/findbugs/</findbugs.path>
   </properties>
   <dependencies>
+  <dependency>
+    <groupId>org.fluttercode.datafactory</groupId>
+    <artifactId>datafactory</artifactId>
+    <version>0.8</version>
+</dependency>
     <dependency>
       <!-- using older version to map dependency version from Hadoop -->
       <groupId>com.google.guava</groupId>
@@ -199,6 +204,12 @@
             </exclusion>
           </exclusions>
         </dependency>
+        <!-- Used in Random String  -->
+        <dependency>
+		    <groupId>org.fluttercode.datafactory</groupId>
+		    <artifactId>datafactory</artifactId>
+		    <version>0.8</version>
+		</dependency>
       </dependencies>
     </profile>
   </profiles>
