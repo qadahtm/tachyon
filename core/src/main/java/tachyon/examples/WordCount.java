@@ -22,7 +22,6 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
-import java.nio.BufferOverflowException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
@@ -36,36 +35,33 @@ import org.slf4j.LoggerFactory;
 import tachyon.Constants;
 import tachyon.TachyonURI;
 import tachyon.Version;
-import tachyon.client.OutStream;
-import tachyon.client.TachyonByteBuffer;
 import tachyon.client.TachyonFile;
 import tachyon.client.TachyonFS;
 import tachyon.client.WriteType;
 import tachyon.client.ReadType;
-import tachyon.client.FileInStream;
-import tachyon.client.FileOutStream;
 import tachyon.conf.TachyonConf;
-import tachyon.util.CommonUtils;
 
 public class WordCount implements Callable<Boolean> {
   private static final Logger LOG = LoggerFactory.getLogger(Constants.LOGGER_TYPE);
 
   private final TachyonURI mMasterLocation;
   private final TachyonURI mFileReadPath;
-  private final TachyonURI mFileWrittenPath;
+  //private final TachyonURI mFileWrittenPath;
   private final TachyonURI mFileResultPath;
   private final WriteType mWriteType;
   private final ReadType mReadType;
-  private final int mNumbers = 20;
-  HashMap<String, Integer> mWordMap = new HashMap<String, Integer>();
+  private final String mFilenamePrefix = "key_value_";
+  private final String mFilenameSuffix = ".txt";
+  private final int mNumLineIntermediateFile = 100;
+  private HashMap<String, Integer> mWordMap = new HashMap<String, Integer>();
+  private int mNumIntermediateFile = 1;
 
   public WordCount(TachyonURI masterLocation, TachyonURI fileReadPath, 
-      TachyonURI fileWrittenPath, 
       TachyonURI fileResultPath,
       WriteType writeType, ReadType readType) {
     mMasterLocation = masterLocation;
     mFileReadPath = fileReadPath;
-    mFileWrittenPath = fileWrittenPath;
+    //mFileWrittenPath = fileWrittenPath;
     mFileResultPath = fileResultPath;
     mWriteType = writeType;
     mReadType = readType;
@@ -75,31 +71,27 @@ public class WordCount implements Callable<Boolean> {
   public Boolean call() throws Exception {
     TachyonFS tachyonClient = TachyonFS.get(mMasterLocation, new TachyonConf());
     TachyonFile fileRead = tachyonClient.getFile(mFileReadPath);
-    TachyonByteBuffer inbuf = null;
     ByteBuffer outbuf = ByteBuffer.allocate((int)fileRead.getBlockSizeByte());
-    String s = "";
-    char c;
-    
     outbuf.order(ByteOrder.nativeOrder());
     
-    
-    if (!tachyonClient.exist(mFileWrittenPath)) {
-      try {
-        tachyonClient.createFile(mFileWrittenPath);
-      } catch (IOException e) {
-        LOG.error("createFile failed!"); 
-      }
-    } else {
-      try {
-        tachyonClient.delete(mFileWrittenPath, true);
-        tachyonClient.createFile(mFileWrittenPath);
-      } catch (IOException e) {
-        LOG.error("delete or createFile failed!"); 
-      }
-    }
+//    
+//    if (!tachyonClient.exist(mFileWrittenPath)) {
+//      try {
+//        tachyonClient.createFile(mFileWrittenPath);
+//      } catch (IOException e) {
+//        LOG.error("createFile failed!"); 
+//      }
+//    } else {
+//      try {
+//        tachyonClient.delete(mFileWrittenPath, true);
+//        tachyonClient.createFile(mFileWrittenPath);
+//      } catch (IOException e) {
+//        LOG.error("delete or createFile failed!"); 
+//      }
+//    }
 
-    TachyonFile fileWritten = tachyonClient.getFile(mFileWrittenPath);
-    tokenizer(fileRead, fileWritten);
+    //TachyonFile fileWritten = tachyonClient.getFile(mFileWrittenPath);
+    tokenizer(tachyonClient, fileRead);
 
     if (!tachyonClient.exist(mFileResultPath)) {
       try {
@@ -116,137 +108,113 @@ public class WordCount implements Callable<Boolean> {
       }
     }
     TachyonFile result = tachyonClient.getFile(mFileResultPath);
-    wordCounter(fileWritten, result);
-
-    //int numberOfBlocks = fileRead.getNumberOfBlocks();
-    //OutStream fOutStream = fileWritten.getOutStream(mWriteType);
-    //String debugS = "";
-    
-    //DataInputStream input = new DataInputStream(fileRead.getInStream(mReadType));
-    //DataOutputStream output = new DataOutputStream(fileWritten.getOutStream(mWriteType));
-    //BufferedReader bd = new BufferedReader(new InputStreamReader(input));
-    //BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(output));
-    //String[] tokens = null;
-    //while ((debugS = bd.readLine()) != null) {
-    //  tokens = debugS.split("\\s+");
-    //  for (String ss: tokens) {
-    //    //LOG.info(ss);
-    //    bw.write(ss + ",1");
-    //    bw.newLine();
-    //  }
-    //}
-    //bw.close();
-    //bd.close();
-    //input.close();
-    //output.close();
-
-    
-
-    //for (int i = 0; i < numberOfBlocks; i ++) {
-    //  inbuf = fileRead.readByteBuffer(i);
-    //  if (inbuf == null) {
-    //    fileRead.recache();
-    //    inbuf = fileRead.readByteBuffer(i);
-    //  }
-    //  try {
-    //    outbuf.put(inbuf.mData);
-    //  } catch (BufferOverflowException e) {
-    //    LOG.error("outbuf overflowed!");
-    //  }
-    //  
-    //  while (outbuf.hasRemaining()) {
-    //    c = outbuf.getChar();
-    //    System.out.println((int)c);
-    //    debugS += c;
-    //    //LOG.info(debugS);
-    //    debugS = "";
-
-    //    if (!Character.isWhitespace(c)) {
-    //      s += c;
-    //    } else {
-    //      if (map.containsKey(s)) {
-    //        Integer count = (Integer)map.get(s);
-    //        map.put(s, new Integer(count.intValue() + 1));
-    //      } else {
-    //        // we haven't seen this word, so add it with count of 1
-    //        map.put(s, new Integer(1));
-    //      }
-    //      s = "";
-    //    }
-    //  }
-    //  //s = new String(outbuf.array());
-    //  //System.out.println("============>" + s);
-//  //    outbuf.flip();
-//  //    outbuf.flip();
-//  //    
-//  //    if (outbuf.hasArray()) {
-//  //      fOutStream.write(outbuf.array());
-//  //    } else {
-//  //      LOG.error("outbuf does not have backing array!");
-//  //    }
-    //}
-
-    //// now print out every word in the book, along with its count,
-    //// in alphabetical order
-    //ArrayList arraylist = new ArrayList(map.keySet());
-    //Collections.sort(arraylist);
-    //
-    //for (int i = 0; i < arraylist.size(); i++) {
-    //  String key = (String)arraylist.get(i);
-    //  Integer count = (Integer)map.get(key);
-    //  System.out.println(key + " --> " + count);
-    //}
-    
-    //fOutStream.flush();
-    //fOutStream.close();
+    wordCounter(tachyonClient, result);
 
     LOG.info("Just testing...");
     return true;
-    //createFile(tachyonClient);
-    //writeFile(tachyonClient);
-    //return readFile(tachyonClient);
+  }
+  
+  /**
+   * _fileCreate(TachyonFS client, String filename)
+   * Helper function used by tokenizer() to create TachyonFile
+   * @param client
+   * @param filename
+   * @return intermediate key-vaules written, in type of TachyonFile
+   * @throws IOException
+   */
+  private TachyonFile _fileCreate(TachyonFS client, String filename) throws IOException {
+    TachyonURI path = new TachyonURI(filename);
+    if (!client.exist(path)) {
+      try {
+        client.createFile(path);
+      } catch (IOException e) {
+        LOG.error("createFile failed!"); 
+      }
+    } else {
+      try {
+        client.delete(path, true);
+        client.createFile(path);
+      } catch (IOException e) {
+        LOG.error("delete or createFile failed!"); 
+      }
+    }
+    return client.getFile(path);
   }
 
-  private TachyonFile tokenizer(TachyonFile fileRead, TachyonFile fileWritten) throws Exception {
+  /**
+   * tokenizer(TachyonFS client, TachyonFile fileRead)
+   * Break a text file into tokens in the form of "key, 1", each intermediate file contains
+   * numLineIntermeidateFile number of lines
+   * @param client
+   * @param fileRead
+   * @throws Exception
+   */
+  private void tokenizer(TachyonFS client, TachyonFile fileRead) throws Exception {
     DataInputStream input = new DataInputStream(fileRead.getInStream(mReadType));
-    DataOutputStream output = new DataOutputStream(fileWritten.getOutStream(mWriteType));
-    BufferedReader bd = new BufferedReader(new InputStreamReader(input));
-    BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(output));
+    //DataOutputStream output = new DataOutputStream(fileWritten.getOutStream(mWriteType));
+    BufferedReader br = new BufferedReader(new InputStreamReader(input));
+    //BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(output));
     String[] tokens = null;
-    String debugS = "";
+    String lineOfFile = "";
+    
 
-    while ((debugS = bd.readLine()) != null) {
-      tokens = debugS.split("\\s+");
+    String filename = "/" + mFilenamePrefix + mNumIntermediateFile + mFilenameSuffix;
+    
+    TachyonFile fileIntermediate = _fileCreate(client, filename);
+    DataOutputStream output = new DataOutputStream(fileIntermediate.getOutStream(mWriteType));
+    BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(output));
+    
+    int numTokens = 0;
+
+    while ((lineOfFile = br.readLine()) != null) {
+      tokens = lineOfFile.split("\\s+");
       for (String ss: tokens) {
+        numTokens++;
+        if (numTokens >= mNumLineIntermediateFile) {
+          numTokens = 0;
+          mNumIntermediateFile++;
+          bw.close();
+          output.close();
+          filename = "/" + mFilenamePrefix + mNumIntermediateFile + mFilenameSuffix;
+          fileIntermediate = _fileCreate(client, filename);
+          output = new DataOutputStream(fileIntermediate.getOutStream(mWriteType));
+          bw = new BufferedWriter(new OutputStreamWriter(output));
+        }
         //LOG.info(ss);
         bw.write(ss + ",1");
         bw.newLine();
       }
     }
     bw.close();
-    bd.close();
+    br.close();
     input.close();
     output.close();
-    return fileWritten;
   }
 
-  private void wordCounter(TachyonFile fileRead, TachyonFile fileWritten) throws Exception {
-    DataInputStream input = new DataInputStream(fileRead.getInStream(mReadType));
-    DataOutputStream output = new DataOutputStream(fileWritten.getOutStream(mWriteType));
-    BufferedReader bd = new BufferedReader(new InputStreamReader(input));
+  private void wordCounter(TachyonFS client, TachyonFile fileResult) throws Exception {
+    DataOutputStream output = new DataOutputStream(fileResult.getOutStream(mWriteType));
     BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(output));
     String[] tokens = null;
-    String debugS = "";
+    TachyonFile fileRead = null;
+    String lineOfFile = "";
 
-    while ((debugS = bd.readLine()) != null) {
-      tokens = debugS.split(",");
-      if (mWordMap.containsKey(tokens[0])) {
-        Integer count = (Integer)mWordMap.get(tokens[0]);
-        mWordMap.put(tokens[0], new Integer(count.intValue() + 1));
-      } else {
-        // we haven't seen this word, so add it with count of 1
-        mWordMap.put(tokens[0], new Integer(1));
+    for (int i = 1; i <= mNumIntermediateFile; i++) {
+      String filename = "/" + mFilenamePrefix + i + mFilenameSuffix;
+      fileRead = client.getFile(new TachyonURI(filename));
+      DataInputStream input = new DataInputStream(fileRead.getInStream(mReadType));
+      BufferedReader br = new BufferedReader(new InputStreamReader(input));
+      while ((lineOfFile = br.readLine()) != null) {
+        tokens = lineOfFile.split(",");
+        if (mWordMap.containsKey(tokens[0])) {
+          Integer count = (Integer)mWordMap.get(tokens[0]);
+          mWordMap.put(tokens[0], new Integer(count.intValue() + 1));
+        } else {
+          // we haven't seen this word, so add it with count of 1
+          mWordMap.put(tokens[0], new Integer(1));
+        }
       }
+      br.close();
+      input.close();
     }
 
     // now print out every word in the book, along with its count,
@@ -261,13 +229,11 @@ public class WordCount implements Callable<Boolean> {
       bw.newLine();
     }
     bw.close();
-    bd.close();
-    input.close();
     output.close();
   }
 
   public static void main(String[] args) throws IllegalArgumentException {
-    if (args.length != 6) {
+    if (args.length != 5) {
       usage();
     }
     
@@ -281,21 +247,20 @@ public class WordCount implements Callable<Boolean> {
     Utils.runExample(new WordCount(new TachyonURI(args[0]), 
         new TachyonURI(args[1]), 
         new TachyonURI(args[2]), 
-        new TachyonURI(args[3]),
-        WriteType.valueOf(args[4]), 
-        ReadType.valueOf(args[5])));
+        WriteType.valueOf(args[3]), 
+        ReadType.valueOf(args[4])));
   }
   
   private static void usage() {
     System.out.println("USAGE: java -cp target/tachyon-" + Version.VERSION 
         + "-jar-with-dependencies.jar "
         + WordCount.class.getName()
-        + " <master address> <read file path> <intermediate write file path> "
+        + " <master address> <read file path> "
         + "<result file path> <write type> <read type>");
     System.out.println("E.g., java -cp ~/my_projects/tachyon/core/target/"
         + "tachyon-0.7.0-SNAPSHOT-jar-with-dependencies.jar "
         + "tachyon.examples.WordCount tachyon://localhost:19998 /big.txt "
-        + "/big_out.txt /big_result.txt TRY_CACHE CACHE");
+        + "/big_result.txt TRY_CACHE CACHE");
     System.exit(-1);
   }
 }
