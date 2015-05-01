@@ -22,8 +22,6 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -55,75 +53,41 @@ public class WordCount implements Callable<Boolean> {
   private final int mNumLineIntermediateFile = 100;
   private HashMap<String, Integer> mWordMap = new HashMap<String, Integer>();
   private int mNumIntermediateFile = 1;
+  private final String mFlag;
 
   public WordCount(TachyonURI masterLocation, TachyonURI fileReadPath, 
       TachyonURI fileResultPath,
-      WriteType writeType, ReadType readType) {
+      WriteType writeType, ReadType readType, String flag) {
     mMasterLocation = masterLocation;
     mFileReadPath = fileReadPath;
     //mFileWrittenPath = fileWrittenPath;
     mFileResultPath = fileResultPath;
     mWriteType = writeType;
     mReadType = readType;
+    mFlag = flag;
   }
 
   @Override
   public Boolean call() throws Exception {
     TachyonFS tachyonClient = TachyonFS.get(mMasterLocation, new TachyonConf());
     TachyonFile fileRead = tachyonClient.getFile(mFileReadPath);
-    ByteBuffer outbuf = ByteBuffer.allocate((int)fileRead.getBlockSizeByte());
-    outbuf.order(ByteOrder.nativeOrder());
+    TachyonFile result = _fileCreate(tachyonClient, mFileResultPath);
     
-//    
-//    if (!tachyonClient.exist(mFileWrittenPath)) {
-//      try {
-//        tachyonClient.createFile(mFileWrittenPath);
-//      } catch (IOException e) {
-//        LOG.error("createFile failed!"); 
-//      }
-//    } else {
-//      try {
-//        tachyonClient.delete(mFileWrittenPath, true);
-//        tachyonClient.createFile(mFileWrittenPath);
-//      } catch (IOException e) {
-//        LOG.error("delete or createFile failed!"); 
-//      }
-//    }
-
-    //TachyonFile fileWritten = tachyonClient.getFile(mFileWrittenPath);
-    tokenizer(tachyonClient, fileRead);
-
-    if (!tachyonClient.exist(mFileResultPath)) {
-      try {
-        tachyonClient.createFile(mFileResultPath);
-      } catch (IOException e) {
-        LOG.error("createFile failed!"); 
-      }
+    if (mFlag == "map") {
+      tokenizer(tachyonClient, fileRead);
+    } else if (mFlag == "reduce") {
+      wordCounter(tachyonClient, result);
     } else {
-      try {
-        tachyonClient.delete(mFileResultPath, true);
-        tachyonClient.createFile(mFileResultPath);
-      } catch (IOException e) {
-        LOG.error("delete or createFile failed!"); 
-      }
+      LOG.info("An unknown flag " + mFlag + " is given! Will do both map and reduce sequentiailly");
+      tokenizer(tachyonClient, fileRead);
+      wordCounter(tachyonClient, result);      
     }
-    TachyonFile result = tachyonClient.getFile(mFileResultPath);
-    wordCounter(tachyonClient, result);
 
-    LOG.info("Just testing...");
+    LOG.info("Finish testing...");
     return true;
   }
   
-  /**
-   * _fileCreate(TachyonFS client, String filename)
-   * Helper function used by tokenizer() to create TachyonFile
-   * @param client
-   * @param filename
-   * @return intermediate key-vaules written, in type of TachyonFile
-   * @throws IOException
-   */
-  private TachyonFile _fileCreate(TachyonFS client, String filename) throws IOException {
-    TachyonURI path = new TachyonURI(filename);
+  private TachyonFile _fileCreate(TachyonFS client, TachyonURI path) throws IOException {
     if (!client.exist(path)) {
       try {
         client.createFile(path);
@@ -141,14 +105,11 @@ public class WordCount implements Callable<Boolean> {
     return client.getFile(path);
   }
 
-  /**
-   * tokenizer(TachyonFS client, TachyonFile fileRead)
-   * Break a text file into tokens in the form of "key, 1", each intermediate file contains
-   * numLineIntermeidateFile number of lines
-   * @param client
-   * @param fileRead
-   * @throws Exception
-   */
+  private TachyonFile _fileCreate(TachyonFS client, String filename) throws IOException {
+    TachyonURI path = new TachyonURI(filename);
+    return _fileCreate(client, path);
+  }
+
   private void tokenizer(TachyonFS client, TachyonFile fileRead) throws Exception {
     DataInputStream input = new DataInputStream(fileRead.getInStream(mReadType));
     //DataOutputStream output = new DataOutputStream(fileWritten.getOutStream(mWriteType));
@@ -156,8 +117,6 @@ public class WordCount implements Callable<Boolean> {
     //BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(output));
     String[] tokens = null;
     String lineOfFile = "";
-    
-
     String filename = "/" + mFilenamePrefix + mNumIntermediateFile + mFilenameSuffix;
     
     TachyonFile fileIntermediate = _fileCreate(client, filename);
@@ -233,7 +192,7 @@ public class WordCount implements Callable<Boolean> {
   }
 
   public static void main(String[] args) throws IllegalArgumentException {
-    if (args.length != 5) {
+    if (args.length < 5 || args.length > 6) {
       usage();
     }
     
@@ -248,7 +207,8 @@ public class WordCount implements Callable<Boolean> {
         new TachyonURI(args[1]), 
         new TachyonURI(args[2]), 
         WriteType.valueOf(args[3]), 
-        ReadType.valueOf(args[4])));
+        ReadType.valueOf(args[4]),
+        args[5]));
   }
   
   private static void usage() {
@@ -256,11 +216,11 @@ public class WordCount implements Callable<Boolean> {
         + "-jar-with-dependencies.jar "
         + WordCount.class.getName()
         + " <master address> <read file path> "
-        + "<result file path> <write type> <read type>");
+        + "<result file path> <write type> <read type> <flag>");
     System.out.println("E.g., java -cp ~/my_projects/tachyon/core/target/"
         + "tachyon-0.7.0-SNAPSHOT-jar-with-dependencies.jar "
         + "tachyon.examples.WordCount tachyon://localhost:19998 /big.txt "
-        + "/big_result.txt TRY_CACHE CACHE");
+        + "/big_result.txt TRY_CACHE CACHE map");
     System.exit(-1);
   }
 }
