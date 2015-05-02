@@ -50,10 +50,13 @@ public class WordCount implements Callable<Boolean> {
   private final ReadType mReadType;
   private final String mFilenamePrefix = "key_value_";
   private final String mFilenameSuffix = ".txt";
-  private final int mNumLineIntermediateFile = 100;
+  private final int mNumLineIntermediateFile = 100000;
   private HashMap<String, Integer> mWordMap = new HashMap<String, Integer>();
   private int mNumIntermediateFile = 1;
-  private final String mFlag;
+  private String mFlag = "";
+  private final String mTargetDir = "test";
+  private final String mSentinel = "/" + mTargetDir + "/" + mFilenamePrefix 
+      + "SENTINEL" + mFilenameSuffix;
 
   public WordCount(TachyonURI masterLocation, TachyonURI fileReadPath, 
       TachyonURI fileResultPath,
@@ -72,10 +75,12 @@ public class WordCount implements Callable<Boolean> {
     TachyonFS tachyonClient = TachyonFS.get(mMasterLocation, new TachyonConf());
     TachyonFile fileRead = tachyonClient.getFile(mFileReadPath);
     TachyonFile result = _fileCreate(tachyonClient, mFileResultPath);
-    
-    if (mFlag == "map") {
+        
+    //TODO: what the heck is going on?
+    if (mFlag.equals("map")) {
+      _fileRemove(tachyonClient, "/" + mTargetDir);
       tokenizer(tachyonClient, fileRead);
-    } else if (mFlag == "reduce") {
+    } else if (mFlag.equals("reduce")) {
       wordCounter(tachyonClient, result);
     } else {
       LOG.info("An unknown flag " + mFlag + " is given! Will do both map and reduce sequentiailly");
@@ -85,6 +90,18 @@ public class WordCount implements Callable<Boolean> {
 
     LOG.info("Finish testing...");
     return true;
+  }
+  
+  private void _fileRemove(TachyonFS client, String filename) throws IOException {
+    TachyonURI path = new TachyonURI(filename);
+    if (client.exist(path)) {
+      LOG.info("here");
+      try {
+        client.delete(path, true);
+      } catch (IOException e) {
+        LOG.error("delete failed!"); 
+      }
+    }
   }
   
   private TachyonFile _fileCreate(TachyonFS client, TachyonURI path) throws IOException {
@@ -117,7 +134,8 @@ public class WordCount implements Callable<Boolean> {
     //BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(output));
     String[] tokens = null;
     String lineOfFile = "";
-    String filename = "/" + mFilenamePrefix + mNumIntermediateFile + mFilenameSuffix;
+    String filename = "/" + mTargetDir + "/" + mFilenamePrefix 
+        + mNumIntermediateFile + mFilenameSuffix;
     
     TachyonFile fileIntermediate = _fileCreate(client, filename);
     DataOutputStream output = new DataOutputStream(fileIntermediate.getOutStream(mWriteType));
@@ -134,7 +152,8 @@ public class WordCount implements Callable<Boolean> {
           mNumIntermediateFile++;
           bw.close();
           output.close();
-          filename = "/" + mFilenamePrefix + mNumIntermediateFile + mFilenameSuffix;
+          filename = "/" + mTargetDir + "/" + mFilenamePrefix
+              + mNumIntermediateFile + mFilenameSuffix;
           fileIntermediate = _fileCreate(client, filename);
           output = new DataOutputStream(fileIntermediate.getOutStream(mWriteType));
           bw = new BufferedWriter(new OutputStreamWriter(output));
@@ -148,20 +167,40 @@ public class WordCount implements Callable<Boolean> {
     br.close();
     input.close();
     output.close();
+    
+    /*
+     * Create a sentinel file to notify the end of mapping
+     */
+    _fileCreate(client, "/" + mTargetDir + "/" + mFilenamePrefix + "SENTINEL" + mFilenameSuffix);
   }
 
-  private void wordCounter(TachyonFS client, TachyonFile fileResult) throws Exception {
+  private void wordCounter(TachyonFS client, TachyonFile fileResult) throws IOException {
     DataOutputStream output = new DataOutputStream(fileResult.getOutStream(mWriteType));
+    DataInputStream input = null;
     BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(output));
+    BufferedReader br = null;
     String[] tokens = null;
     TachyonFile fileRead = null;
     String lineOfFile = "";
 
-    for (int i = 1; i <= mNumIntermediateFile; i++) {
-      String filename = "/" + mFilenamePrefix + i + mFilenameSuffix;
-      fileRead = client.getFile(new TachyonURI(filename));
-      DataInputStream input = new DataInputStream(fileRead.getInStream(mReadType));
-      BufferedReader br = new BufferedReader(new InputStreamReader(input));
+    for (int i = 1; ; i++) {
+      String filename = "/" + mTargetDir + "/" + mFilenamePrefix + i + mFilenameSuffix;
+      LOG.info(filename);
+      try {
+        fileRead = client.getFile(new TachyonURI(filename));
+        input = new DataInputStream(fileRead.getInStream(mReadType));
+        br = new BufferedReader(new InputStreamReader(input));
+      } catch (Exception e) {
+        if (client.exist(new TachyonURI(mSentinel))) {
+          LOG.info("Found Sentinel! Finishing reducing...");
+          break;
+        } else {
+          LOG.info("Didn't find Sentinel, waiting for more inputs...");
+          i--;
+          continue;
+        }
+      }
+      
       while ((lineOfFile = br.readLine()) != null) {
         tokens = lineOfFile.split(",");
         if (mWordMap.containsKey(tokens[0])) {
