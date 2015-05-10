@@ -71,7 +71,7 @@ public class RandomDataWriter {
         TimeUnit.SECONDS);
 
     System.out.println("Waiting for task termination");
-
+    
     sScheduledExecutorService.awaitTermination(10, TimeUnit.SECONDS);
     sScheduledExecutorService.shutdown();
 
@@ -117,7 +117,7 @@ public class RandomDataWriter {
       sb.append(mDf.getBusinessName() + " located at " + mDf.getAddress());
       sb.append("\n");
       sb.append(getRandomPoint(minX, maxX, minY, maxY));
-
+      sb.append("\n");
       // System.out.println(sb.toString());
       return sb.toString();
     }
@@ -155,7 +155,7 @@ public class RandomDataWriter {
         OutStream os = tf.getOutStream(DEFAULT_WRITE_TYPE);
 
         for (int j = 0; j < 2; j++) {
-          for (int i = 0; i < 100000; i++) {
+          for (int i = 0; i < 1000; i++) {
             os.write(createEntry().getBytes());
           }
 //          Thread.sleep(300);

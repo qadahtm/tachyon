@@ -252,7 +252,7 @@ public class FileEventsTracker {
           // listening to nonexitent file, can only fire file created events
           // System.out.println("Path does not exist: " + mListenUri.getPath());
           if (mInitialrun) {
-            mLog.info("Tracking non-existing path");
+            mLog.info("Tracking non-existing path : " + mListenUri.getPath());
             mInitialrun = false;
           }
 
@@ -272,9 +272,9 @@ public class FileEventsTracker {
 
           if (mInitialrun) {
             if (mFileInfo.isFolder) {
-              mLog.info("Tracking a directory");
+              mLog.info("Tracking a directory : " + mListenUri.getPath());
             } else {
-              mLog.info("Tracking a file");
+              mLog.info("Tracking a file : " + mListenUri.getPath());
             }
 
             mInitialrun = false;
