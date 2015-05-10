@@ -13,24 +13,11 @@
  * the License.
  */
 
-package tachyon.client;
-
-import java.util.List;
+package tachyon.examples;
 
 import tachyon.thrift.ClientFileInfo;
 
-public interface FileEventListener {
-
-//  void onBlockReady(long blockId);
+public class FileTrackingInfo {
+  private ClientFileInfo mCfi;
   
-//  void onNewBlocksReady(ClientFileInfo newFileInfo, List<Long> newblocks);
-
-  void onFileUpdate(ClientFileInfo newFileInfo);
-  
-  void onFileListUpdate(ClientFileInfo newFileInfo, List<ClientFileInfo> files);
-  
-  void onFileCreated();
-  
-  void onFileDeleted();
-
 }

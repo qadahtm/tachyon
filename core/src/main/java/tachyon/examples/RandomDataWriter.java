@@ -16,9 +16,6 @@
 package tachyon.examples;
 
 import java.io.IOException;
-import java.io.PrintWriter;
-import java.sql.ClientInfoStatus;
-import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -27,13 +24,11 @@ import java.util.concurrent.TimeUnit;
 import org.fluttercode.datafactory.impl.DataFactory;
 
 import tachyon.TachyonURI;
-import tachyon.client.FileEventListener;
 import tachyon.client.OutStream;
 import tachyon.client.TachyonFS;
 import tachyon.client.TachyonFile;
 import tachyon.client.WriteType;
 import tachyon.conf.TachyonConf;
-import tachyon.thrift.ClientFileInfo;
 import tachyon.util.ThreadFactoryUtils;
 
 public class RandomDataWriter {
@@ -43,20 +38,34 @@ public class RandomDataWriter {
 
   public static void main(String[] args) throws InterruptedException,
       IOException {
-
-    int period = 1;
-
-    final String outputPath = "tachyon://192.168.56.101:19998/random-test-data/data.txt";
-    final int tuplesPerSecond = 1000;
+    
+    String outputdirpath = "/random-test-data/";
+    String outputfile = "data.txt";
+    String tachyonMasterUri = "tachyon://192.168.56.101:19998";
+    
+    boolean closefile = true;
+    boolean addnew = true;
+    
+//    String outputPath = "tachyon://192.168.56.101:19998/random-test-data/data.txt";
+    String outputPath = tachyonMasterUri + outputdirpath + outputfile;
+    
     
     TachyonConf tconf = new TachyonConf();
-    tconf.set("tachyon.user.default.block.size.byte", "4194304");
+    tconf.set("tachyon.user.default.block.size.byte", "4194304"); // 4MB blocks
+    
+//    tconf.set("tachyon.user.default.block.size.byte", "1048576"); // 1MB blocks
+    
     
     final TachyonFS mTFS = TachyonFS.get(new TachyonURI(
-        "tachyon://192.168.56.101:19998"), tconf);
+        tachyonMasterUri), tconf);
+    
     
     DataFactory mDf = new DataFactory();
-    DataAppender appendTask = new DataAppender(mDf, mTFS, outputPath);
+    
+    
+    DataAppender appendTask = new DataAppender(mDf, mTFS, outputPath, closefile, addnew);
+//    DataAppender appendTask = new DataAppender(mDf, mTFS, outputPath, false, false);
+//    DataAppender appendTask = new DataAppender(mDf, mTFS, outputPath, false, true);
 
     ScheduledFuture<?> sf = sScheduledExecutorService.schedule(appendTask, 1,
         TimeUnit.SECONDS);
@@ -75,12 +84,20 @@ public class RandomDataWriter {
     private TachyonFS mTFS;
     private TachyonFile mTargetFile;
     private int mFi = 0;
+    private boolean mCloseFile = true;
+    private boolean mAddNewFile = true;
+    
+    private static final WriteType DEFAULT_WRITE_TYPE = WriteType.ASYNC_THROUGH;
 
-    public DataAppender(DataFactory mDf, TachyonFS mTFS, String outputPath) {
+    public DataAppender(DataFactory mDf, TachyonFS mTFS, String outputPath,
+        boolean closeFile, boolean addNew) {
       super();
       this.mDf = mDf;
       this.mTFS = mTFS;
       this.mOutputPath = outputPath;
+      this.mCloseFile = closeFile;
+      this.mAddNewFile = addNew;
+      
     }
 
     public String createEntry() {
@@ -113,35 +130,52 @@ public class RandomDataWriter {
       try {
         TachyonFile tf = mTFS.getFile(new TachyonURI(outputPathi));
 
-        while (tf != null) {
-          //mTFS.delete(new TachyonURI(outputPathi), true);
-          System.out.println(outputPathi + " already exist, tying to create another");
-          mFi++;
-          outputPathi = mOutputPath + "." + mFi;
-          tf = mTFS.getFile(new TachyonURI(outputPathi));
+        if (mAddNewFile) {
+          while (tf != null) {
+            
+            System.out.println(outputPathi + " already exist, creating a new one");
+            mFi++;
+            outputPathi = mOutputPath + "." + mFi;
+            tf = mTFS.getFile(new TachyonURI(outputPathi));
+          }
+          
+        } else {
+          if (tf != null) {
+            System.out.println(outputPathi + " already exist, deleting it");
+            mTFS.delete(new TachyonURI(outputPathi), true);
+          }
+          tf = null;
         }
+        
+        if (tf == null) {
+          tf = mTFS.getFile(mTFS.createFile(new TachyonURI(outputPathi)));
+        }
+               
 
-        tf = mTFS.getFile(mTFS.createFile(new TachyonURI(outputPathi)));
+        OutStream os = tf.getOutStream(DEFAULT_WRITE_TYPE);
 
-        OutStream os = tf.getOutStream(WriteType.ASYNC_THROUGH);
-
-        for (int j = 0; j < 10; j++) {
+        for (int j = 0; j < 2; j++) {
           for (int i = 0; i < 100000; i++) {
             os.write(createEntry().getBytes());
           }
-          Thread.sleep(300);
+//          Thread.sleep(300);
         }
 
-        os.close();
-        System.out.println("Wrote " + outputPathi);
+        if (mCloseFile) {
+          os.close();
+          System.out.println("Wrote " + outputPathi);
+        } else {
+          System.out.println("Wrote " + outputPathi + " , not closed");
+        }
+        
         mFi++;
 
       } catch (IOException e) {
         // TODO Auto-generated catch block
         e.printStackTrace();
-      } catch (InterruptedException e) {
+//      } catch (InterruptedException e) {
         // TODO Auto-generated catch block
-        e.printStackTrace();
+//        e.printStackTrace();
       }
 
     }

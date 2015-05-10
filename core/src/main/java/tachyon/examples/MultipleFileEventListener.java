@@ -31,72 +31,77 @@ import tachyon.conf.TachyonConf;
 import tachyon.thrift.ClientFileInfo;
 import tachyon.util.ThreadFactoryUtils;
 
-public class BasicFileEventListener {
+public class MultipleFileEventListener {
 
   public static void main(String[] args) throws IOException,
       InterruptedException {
-    
-    
-//    String mTachyonMaster = "tachyon://192.168.56.101:19998";
-//    String path = "tachyon://192.168.56.101:19998/random-test-data/";
-    
-    if (args.length != 2) {
-      System.out.println("Usage: BasicFileEventListener "
-              + "tachyon://tachyon-master-ip:port "
-              + "tachyon://tachyon-master-ip:port/random-test-data/");
-      System.exit(0);
-    }
-    
-    
-    String mTachyonMaster = args[0];
-    String path = args[1];
-    
+    String mTachyonMaster = "tachyon://192.168.56.101:19998";
     TachyonFS tfs = TachyonFS.get(new TachyonURI(mTachyonMaster),
         new TachyonConf());
-    
+
     FileEventsTracker ftracker = new FileEventsTracker(tfs);
-    
-    
+    String path = "tachyon://192.168.56.101:19998/random-test-data/";
+
     FileEventListener listener1 = new FileEventListener() {
 
       @Override
       public void onFileUpdate(ClientFileInfo newFileInfo) {
-        // TODO Auto-generated method stub
         System.out.println("file updated");
 
       }
 
       @Override
       public void onFileDeleted() {
-        // TODO Auto-generated method stub
         System.out.println("file deleted");
       }
 
       @Override
       public void onFileCreated() {
-        // TODO Auto-generated method stub
         System.out.println("file Created");
       }
 
       @Override
       public void onFileListUpdate(ClientFileInfo newFileInfo,
           List<ClientFileInfo> files) {
-        long tid = Thread.currentThread().getId();
-        System.out.println(tid + " : file list updated, file count = " + files.size());
-        for (ClientFileInfo f : files) {
-          System.out.println(tid + " : new file: " + f.getPath());
-        }
-        
+        System.out.println("file list updated, file count = " + files.size());
+
       }
 
     };
-    
+
+    FileEventListener listener2 = new FileEventListener() {
+
+      @Override
+      public void onFileUpdate(ClientFileInfo newFileInfo) {
+        System.out.println("file updated2");
+
+      }
+
+      @Override
+      public void onFileDeleted() {
+        System.out.println("file deleted2");
+      }
+
+      @Override
+      public void onFileCreated() {
+        System.out.println("file Created2");
+      }
+
+      @Override
+      public void onFileListUpdate(ClientFileInfo newFileInfo,
+          List<ClientFileInfo> files) {
+        System.out.println("file list updated 2, file count = " + files.size());
+
+      }
+
+    };
+
     int listen1id = ftracker.registerListener(path, listener1);
-    
+    int listen2id = ftracker.registerListener(path, listener2);
+
     Thread.sleep(100000);
     ftracker.shutdown();
 
   }
-
 
 }
