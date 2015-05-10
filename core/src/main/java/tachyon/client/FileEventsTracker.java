@@ -233,7 +233,9 @@ public class FileEventsTracker {
       mTFS = TFS;
       mFileInfo = mTFS.getFileStatus(-1, mListenUri);
       mFEListener = el;
-      mFiles = mTFS.listStatus(mListenUri);
+      if (mFileInfo != null) {
+        mFiles = mTFS.listStatus(mListenUri);
+      }
     }
 
     @Override
@@ -243,8 +245,7 @@ public class FileEventsTracker {
       try {
 
         ClientFileInfo newFileInfo = mTFS.getFileStatus(-1, mListenUri);
-        List<ClientFileInfo> newFiles = mTFS.listStatus(new TachyonURI(
-            mFileInfo.path));
+        
         
         
         if (mFileInfo == null) {
@@ -259,6 +260,11 @@ public class FileEventsTracker {
             mFileInfo = newFileInfo;
             mFEListener.onFileCreated();
 
+            
+            if (newFileInfo.isFolder) {
+              mFiles = mTFS.listStatus(mListenUri);
+            }
+            
             return;
           }
 
@@ -290,7 +296,8 @@ public class FileEventsTracker {
           
           if (mFileInfo.isFolder) {
             
-            
+            List<ClientFileInfo> newFiles = mTFS.listStatus(new TachyonURI(
+                mFileInfo.path));
             List<ClientFileInfo> mDiff = new ArrayList<ClientFileInfo>();
 
             // mLog.info(Thread.currentThread().getId() +
